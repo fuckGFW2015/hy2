@@ -7,8 +7,8 @@ set -e
 
 # ---------- 默认配置 ----------
 HYSTERIA_VERSION="v2.6.5"
-DEFAULT_PORT=29999         # 自适应端口
-AUTH_PASSWORD="Ap746xVZkQ3n7adCYaQq"   # 建议修改为复杂密码
+DEFAULT_PORT=22222         # 自适应端口
+AUTH_PASSWORD="Ap746xVZkQ3n7adCYaQq6"   # 建议修改为复杂密码
 CERT_FILE="cert.pem"
 KEY_FILE="key.pem"
 SNI="www.bing.com"
