@@ -1,4 +1,4 @@
-一键安装命令
+# 一键安装命令
 
 ```
 
@@ -15,7 +15,7 @@ sudo bash hy2.sh
 
 ```
 
-若出现一下错误
+# 若出现一下错误
 
 ```
 INFO: 启动 Hysteria2 服务（前台运行）...
@@ -29,7 +29,7 @@ chmod +x hysteria-linux-amd64 && ./hysteria-linux-amd64 server -c server.yaml
 
 ```
 
-自定义端口
+# 自定义端口
 
 直接使用 sed 工具（几乎所有系统都自带）来强行替换配置文件中的端口：
 
@@ -44,9 +44,9 @@ sed -i 's/listen: ":29999"/listen: ":443"/' server.yaml
 ./hysteria-linux-amd64 server -c server.yaml
 
 ```
-#**如果看到 server up and running {"listen": ":443"}，说明服务器已经就绪。**
+## **如果看到 server up and running {"listen": ":443"}，说明服务器已经就绪。**
 
-用 cat 命令确认一下是否修改成功：
+# 用 cat 命令确认一下是否修改成功：
 
 ```
 cat server.yaml
