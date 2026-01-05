@@ -44,6 +44,8 @@ sed -i 's/listen: ":29999"/listen: ":443"/' server.yaml
 ./hysteria-linux-amd64 server -c server.yaml
 
 ```
+#**如果看到 server up and running {"listen": ":3102"}，说明服务器已经就绪。**
+
 用 cat 命令确认一下是否修改成功：
 
 ```
