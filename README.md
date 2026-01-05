@@ -35,12 +35,12 @@ chmod +x hysteria-linux-amd64 && ./hysteria-linux-amd64 server -c server.yaml
 
 ```
 
-# 自定义端口
+# 修改自定义端口
 
 直接使用 sed 工具（几乎所有系统都自带）来强行替换配置文件中的端口：
 
 ```
-# 假设你想把端口从 29999 改成 443
+## 假设你想把端口从 29999 改成 443（或者VPS服务器分配的端口）
 sed -i 's/listen: ":29999"/listen: ":443"/' server.yaml
 
 ```
@@ -52,12 +52,14 @@ sed -i 's/listen: ":29999"/listen: ":443"/' server.yaml
 ```
 ## **如果看到 server up and running {"listen": ":443"}，说明服务器已经就绪。**
 
-# 用 cat 命令确认一下是否修改成功：
+# 重启一下VPS,用 cat 命令确认一下是否修改成功：
 
 ```
 cat server.yaml
 
 ```
+## （看一下Listen端口，是否是你指定的端口）
+
 # 安全保证
 
 ```
