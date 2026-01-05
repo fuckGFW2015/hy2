@@ -75,7 +75,7 @@ if [[ $USE_LETSENCRYPT == true && -z "$SNI" ]]; then
 fi
 
 if [[ -z "$SNI" ]]; then
-    SNI="www.bing.com"
+    SNI="www.microsoft.com"
     warn "未指定域名，SNI 将使用默认值: $SNI（仅用于伪装，建议绑定真实域名）"
 fi
 
