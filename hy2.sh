@@ -101,21 +101,27 @@ download_and_verify() {
         return
     fi
 
-    local url="https://github.com/apernet/hysteria/releases/download/app/${HYSTERIA_VERSION}/${BIN_NAME}"
-    local sha_url="${url}.sha256sum"
+    # 适配新的 URL 结构：版本号前增加了 "app%2F"
+    local url="https://github.com/apernet/hysteria/releases/download/app%2F${HYSTERIA_VERSION}/${BIN_NAME}"
+    # 适配新的校验文件：现在统一叫 hashes.txt
+    local sha_url="https://github.com/apernet/hysteria/releases/download/app%2F${HYSTERIA_VERSION}/hashes.txt"
 
     info "正在下载 Hysteria2 二进制: ${url}"
     curl -L --retry 3 --connect-timeout 30 -o "$BIN_PATH" "$url" || error "下载失败"
 
-    info "正在下载 SHA256 校验和: ${sha_url}"
-    local sha_file="${BIN_PATH}.sha256"
+    info "正在下载 SHA256 校验列表: ${sha_url}"
+    local sha_file="hashes.txt"
     curl -L --retry 3 --connect-timeout 30 -o "$sha_file" "$sha_url" || error "无法获取校验和"
 
-    # 验证
-    if ! sha256sum -c "$sha_file" --status; then
+    # 验证逻辑修改：
+    # 因为 hashes.txt 包含所有文件的校验和，我们需要筛选出当前下载文件的对应行进行验证
+    info "正在进行 SHA256 完整性校验..."
+    if ! grep "$BIN_NAME" "$sha_file" | sha256sum -c --status; then
+        rm -f "$sha_file"
         error "二进制文件校验失败！可能被篡改，请勿使用。"
     fi
 
+    rm -f "$sha_file" # 校验完删除临时校验文件
     chmod +x "$BIN_PATH"
     success "二进制验证通过并设为可执行: $BIN_PATH"
 }
