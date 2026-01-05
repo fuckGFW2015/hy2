@@ -5,6 +5,16 @@
 bash <(curl -fsSL https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/heads/main/hy2.sh)
 
 ```
+或
+
+```
+# 下载脚本
+curl -fsSL https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/heads/main/hy2.sh -o hy2.sh
+# 修改脚本中的 BIN_PATH 变量，或者直接在有权限的目录下运行
+sudo bash hy2.sh
+
+```
+
 若出现一下错误
 
 ```
@@ -18,5 +28,29 @@ INFO: 启动 Hysteria2 服务（前台运行）...
 chmod +x hysteria-linux-amd64 && ./hysteria-linux-amd64 server -c server.yaml
 
 ```
+
+自定义端口
+
+直接使用 sed 工具（几乎所有系统都自带）来强行替换配置文件中的端口：
+
+```
+# 假设你想把端口从 29999 改成 443
+sed -i 's/listen: ":29999"/listen: ":443"/' server.yaml
+
+```
+修改完后，别忘了重启你的 Hysteria2 程序：
+
+```
+./hysteria-linux-amd64 server -c server.yaml
+
+```
+用 cat 命令确认一下是否修改成功：
+
+```
+cat server.yaml
+
+```
+
+
 
 
