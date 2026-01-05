@@ -101,8 +101,8 @@ download_and_verify() {
         return
     fi
 
-    local url="https://github.com/apernet/hysteria/releases/download/app%2F${HYSTERIA_VERSION}/${BIN_NAME}"
-    local sha_url="https://github.com/apernet/hysteria/releases/download/app%2F${HYSTERIA_VERSION}/hashes.txt"
+    local url="https://github.com/apernet/hysteria/releases/download/${HYSTERIA_VERSION}/${BIN_NAME}"
+    local sha_url="https://github.com/apernet/hysteria/releases/download/${HYSTERIA_VERSION}/hashes.txt"
 
     info "正在下载 Hysteria2 二进制: ${url}"
     curl -L --retry 3 --connect-timeout 30 -o "$BIN_PATH" "$url" || error "下载失败"
@@ -112,8 +112,8 @@ download_and_verify() {
     curl -L --retry 3 --connect-timeout 30 -o "$sha_file" "$sha_url" || error "无法获取校验和"
 
     info "正在进行 SHA256 完整性校验..."
-    if ! grep "$BIN_NAME" "$sha_file" | sha256sum -c --status; then
-        rm -f "$sha_file"
+    if ! grep -E "^\w+\s+$BIN_NAME\$" "$sha_file" | sha256sum -c --status; then
+        rm -f "$sha_file" "$BIN_PATH"
         error "二进制文件校验失败！可能被篡改，请勿使用。"
     fi
 
