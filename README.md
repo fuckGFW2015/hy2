@@ -66,9 +66,9 @@ cat server.yaml
 
 🔒 所有二进制文件 仅从 https://github.com/apernet/hysteria 下载
 
-🌐 不上报服务器公网 IP
+🌐 不上报服务器公网 IP，获取公网IP时使用ifconfig.me（公开、可信的IP查询服务）
 
-🔑 TLS 私钥权限设为 600（仅 root 可读写），绝不使用 777
+🔑 仅连接到可信的GitHub和Let's Encrypt服务，无隐藏的数据上传或外联
 
 🧹 无隐藏服务、无后门命令、无多余依赖
 
