@@ -66,9 +66,7 @@ cat server.yaml
 
 🔒 所有二进制文件 仅从 https://github.com/apernet/hysteria 下载
 
-🚫 无任何 wget/curl 请求非 GitHub 域名（如 ip-api、短链、统计接口等）
-
-🌐 不自动获取或上报服务器公网 IP
+🌐 不上报服务器公网 IP
 
 🔑 TLS 私钥权限设为 600（仅 root 可读写），绝不使用 777
 
