@@ -101,9 +101,7 @@ download_and_verify() {
         return
     fi
 
-    # 适配新的 URL 结构：版本号前增加了 "app%2F"
     local url="https://github.com/apernet/hysteria/releases/download/app%2F${HYSTERIA_VERSION}/${BIN_NAME}"
-    # 适配新的校验文件：现在统一叫 hashes.txt
     local sha_url="https://github.com/apernet/hysteria/releases/download/app%2F${HYSTERIA_VERSION}/hashes.txt"
 
     info "正在下载 Hysteria2 二进制: ${url}"
@@ -113,15 +111,13 @@ download_and_verify() {
     local sha_file="hashes.txt"
     curl -L --retry 3 --connect-timeout 30 -o "$sha_file" "$sha_url" || error "无法获取校验和"
 
-    # 验证逻辑修改：
-    # 因为 hashes.txt 包含所有文件的校验和，我们需要筛选出当前下载文件的对应行进行验证
     info "正在进行 SHA256 完整性校验..."
     if ! grep "$BIN_NAME" "$sha_file" | sha256sum -c --status; then
         rm -f "$sha_file"
         error "二进制文件校验失败！可能被篡改，请勿使用。"
     fi
 
-    rm -f "$sha_file" # 校验完删除临时校验文件
+    rm -f "$sha_file"
     chmod +x "$BIN_PATH"
     success "二进制验证通过并设为可执行: $BIN_PATH"
 }
@@ -139,11 +135,11 @@ setup_certificates() {
     if [[ $USE_LETSENCRYPT == true ]]; then
         info "使用 Let's Encrypt 申请证书（需 acme.sh）..."
         if ! command -v socat >/dev/null; then
-            error "需要安装 socat: apt install socat（Debian/Ubuntu）"
+            error "需要安装 socat（用于 HTTP-01 验证）\n请运行: apt install socat\n并确保 80 端口未被占用且对外可访问"
         fi
         if ! command -v acme.sh >/dev/null; then
             info "安装 acme.sh..."
-            curl https://get.acme.sh | sh -s email=my@example.com
+            curl https://get.acme.sh | sh
         fi
         ~/.acme.sh/acme.sh --issue -d "$SNI" --standalone
         ~/.acme.sh/acme.sh --install-cert -d "$SNI" \
@@ -189,16 +185,36 @@ EOF
     success "配置文件写入: $CONFIG_FILE"
 }
 
-# ---------- 手动输入/指定 IP ----------
+# ---------- 获取公网 IP 或域名 ----------
 get_public_ip() {
-    # 优先检查是否已经通过外部变量设置了 SERVER_IP
     if [[ -n "${MY_CUSTOM_IP:-}" ]]; then
         echo "$MY_CUSTOM_IP"
-    else
-        # 如果没有预设值，则提示用户输入
-        read -p "请输入服务器公网 IP 或域名: " MANUAL_IP
-        echo "${MANUAL_IP:-127.0.0.1}"
+        return
     fi
+
+    # 尝试自动获取公网 IP
+    local ip=""
+    if command -v curl >/dev/null; then
+        ip=$(curl -s --max-time 5 https://ifconfig.me/ip 2>/dev/null)
+    elif command -v wget >/dev/null; then
+        ip=$(wget -qO- --timeout=5 https://ifconfig.me/ip 2>/dev/null)
+    fi
+
+    # 验证是否为有效 IPv4 地址（简单判断）
+    if [[ -n "$ip" && "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        echo "$ip"
+        return
+    fi
+
+    # 自动获取失败，要求用户手动输入（非空）
+    while true; do
+        read -rp "⚠️ 无法自动获取公网 IP，请手动输入服务器公网 IP 或域名: " ip_input
+        if [[ -n "$ip_input" ]]; then
+            echo "$ip_input"
+            return
+        fi
+        echo "❌ 输入不能为空，请重试。"
+    done
 }
 
 # ---------- 安装为 systemd 服务 ----------
@@ -257,7 +273,13 @@ print_info() {
     echo "  listen: 127.0.0.1:1080"
     echo "=========================================================================="
     echo
-    warn "请确保防火墙已放行端口: $SERVER_PORT (TCP/UDP)"
+
+    # 防火墙提示
+    info "📌 请确保防火墙已放行端口: $SERVER_PORT (TCP/UDP)"
+    echo "  示例命令："
+    echo "    ufw: sudo ufw allow $SERVER_PORT/tcp && sudo ufw allow $SERVER_PORT/udp"
+    echo "    firewalld: sudo firewall-cmd --permanent --add-port=$SERVER_PORT/udp --add-port=$SERVER_PORT/tcp && sudo firewall-cmd --reload"
+    echo "    iptables: iptables -A INPUT -p udp --dport $SERVER_PORT -j ACCEPT && iptables -A INPUT -p tcp --dport $SERVER_PORT -j ACCEPT"
 }
 
 # ---------- 主流程 ----------
@@ -265,7 +287,7 @@ main() {
     echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     echo "Hysteria2 安全增强部署脚本"
     echo "端口: $SERVER_PORT | 域名(SNI): $SNI"
-    [[ $USE_LETSENCRYPT == true ]] && echo "✅ 启用 Let's Encrypt 证书"
+    [[ $USE_LETSENCRYPT == true ]] && echo "✅ 启用 Let's Encrypt 证书（需 80 端口开放）"
     [[ $INSTALL_AS_SERVICE == true ]] && echo "✅ 安装为 systemd 服务"
     echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 
