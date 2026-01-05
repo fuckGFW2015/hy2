@@ -189,9 +189,16 @@ EOF
     success "配置文件写入: $CONFIG_FILE"
 }
 
-# ---------- 获取公网 IP ----------
+# ---------- 手动输入/指定 IP ----------
 get_public_ip() {
-    curl -s --max-time 10 https://api.ipify.org || echo "YOUR_PUBLIC_IP"
+    # 优先检查是否已经通过外部变量设置了 SERVER_IP
+    if [[ -n "${MY_CUSTOM_IP:-}" ]]; then
+        echo "$MY_CUSTOM_IP"
+    else
+        # 如果没有预设值，则提示用户输入
+        read -p "请输入服务器公网 IP 或域名: " MANUAL_IP
+        echo "${MANUAL_IP:-127.0.0.1}"
+    fi
 }
 
 # ---------- 安装为 systemd 服务 ----------
