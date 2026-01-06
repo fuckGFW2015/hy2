@@ -111,26 +111,28 @@ download_and_verify() {
     local sha_file="hashes.txt"
     curl -L --retry 3 --connect-timeout 30 -o "$sha_file" "$sha_url" || error "无法获取校验和"
 
-    # 提取对应文件的哈希行（精确匹配文件名）
-    local matched_line
-    matched_line=$(grep -E "^[a-f0-9]{64}  ${BIN_NAME}\$" "$sha_file")
+    # 计算本地文件的 SHA256
+    local local_hash
+    local_hash=$(sha256sum "$BIN_PATH" | cut -d' ' -f1)
 
-    if [[ -z "$matched_line" ]]; then
+    # 从 hashes.txt 中查找该文件对应的官方哈希
+    local official_hash
+    official_hash=$(awk -v file="$BIN_NAME" '$2 == file {print $1}' "$sha_file")
+
+    if [[ -z "$official_hash" ]]; then
         rm -f "$sha_file" "$BIN_PATH"
-        error "未在 hashes.txt 中找到 $BIN_NAME 的哈希值"
+        error "未在 hashes.txt 中找到文件 '$BIN_NAME' 的哈希值"
     fi
 
-    # 使用该行进行校验
-    if echo "$matched_line" | sha256sum -c --status; then
-        success "✅ 二进制 SHA256 校验通过！"
+    if [[ "$local_hash" == "$official_hash" ]]; then
+        success "✅ SHA256 校验通过！"
         rm -f "$sha_file"
         chmod +x "$BIN_PATH"
     else
         rm -f "$sha_file" "$BIN_PATH"
-        error "❌ 二进制文件校验失败！可能被篡改，请勿使用。"
+        error "❌ 校验失败！\n本地哈希: $local_hash\n官方哈希: $official_hash"
     fi
 }
-
 # ---------- 生成随机密码 ----------
 generate_password() {
     openssl rand -base64 32 | tr -d "=+/" | cut -c1-24
