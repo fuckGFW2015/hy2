@@ -99,8 +99,10 @@ bandwidth:
   up: "200 mbps"
   down: "200 mbps"
 quic:
-  max_idle_timeout: "10s"
-  max_concurrent_streams: 4
+  max_idle_timeout: "120s"
+  keepalive_interval: "15s"
+log:
+  level: warn
 EOF
     echo "$AUTH_PASSWORD" > "password.txt"
     success "配置文件和密码已保存"
