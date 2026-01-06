@@ -4,11 +4,10 @@
 
 ## 这是一个为 Hysteria2 服务端设计的纯净版一键安装脚本，低内存环境优化,适用于 Ubuntu、Debian、CentOS 等主流 Linux 发行版。脚本完全本地运行，所有组件均从 apernet/hysteria 官方仓库下载，无任何隐藏行为。
 
-# 部署命令
+# 容器环境部署命令
 
 ```
-## 容器环境
-curl -fsSL -o hy2.sh https://raw.githubusercontent.com/fuckGFW2015/hy2/main/hy2.sh
+ curl -fsSL -o hy2.sh https://raw.githubusercontent.com/fuckGFW2015/hy2/main/hy2.sh
 sed -i 's|BASH_SOURCE\[0\]|"hy2.sh"|g' hy2.sh
 chmod +x hy2.sh
 ./hy2.sh -p 29999    # ← 注意：没有 --service！
