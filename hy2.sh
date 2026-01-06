@@ -6,8 +6,9 @@
 set -euo pipefail
 
 # ---------- 默认配置 ----------
-HYSTERIA_RELEASE_TAG="app/v2.6.5"   # GitHub release tag
-HYSTERIA_VERSION="2.6.5"           # 纯版本号，用于文件名
+HYSTERIA_RELEASE_TAG="app/v2.6.5"   # GitHub release tag（带 app/）
+# 不再需要 HYSTERIA_VERSION 用于文件名！
+
 DEFAULT_PORT=29999
 SNI=""
 ALPN="h3"
@@ -82,17 +83,15 @@ fi
 
 # ---------- 架构检测 ----------
 arch_name() {
-    local machine
-    machine=$(uname -m | tr '[:upper:]' '[:lower:]')
-    case "$machine" in
-        *arm64*|*aarch64*) echo "arm64" ;;
-        *x86_64*|*amd64*)  echo "amd64" ;;
-        *) error "不支持的 CPU 架构: $(uname -m)" ;;
+    case "$(uname -m)" in
+        x86_64|amd64) echo "amd64" ;;
+        aarch64|arm64) echo "arm64" ;;
+        *) exit 1 ;;
     esac
 }
 
 ARCH=$(arch_name)
-BIN_NAME="hysteria-${HYSTERIA_VERSION}-linux-${ARCH}"
+BIN_NAME="hysteria-linux-${ARCH}"      # ← 关键：无版本号
 BIN_PATH="./${BIN_NAME}"
 
 # ---------- 下载并校验二进制 ----------
