@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
 # Hysteria2 安全修复版部署脚本（兼容 BASH_SOURCE 问题 + 正确 release tag）
-# 修复来源: https://raw.githubusercontent.com/fuckGFW2015/hy2/main/hy2.sh
-# 修复时间: 2026-01-07
+# # 作者: stephchow
+# 更新时间: 2026-01-07
 
 set -euo pipefail
 
