@@ -6,7 +6,8 @@
 set -euo pipefail
 
 # ---------- 默认配置 ----------
-HYSTERIA_VERSION="v2.6.5"
+HYSTERIA_RELEASE_TAG="app/v2.6.5"   # GitHub release tag
+HYSTERIA_VERSION="2.6.5"           # 纯版本号，用于文件名
 DEFAULT_PORT=29999
 SNI=""
 ALPN="h3"
@@ -91,10 +92,8 @@ arch_name() {
 }
 
 ARCH=$(arch_name)
-HYSTERIA_VERSION_TAG="app/v2.6.5"
-HYSTERIA_VERSION_NUM="2.6.5"   # 从 tag 中提取纯版本号
-BIN_NAME="hysteria-${HYSTERIA_VERSION_NUM}-linux-${ARCH}"
-BIN_PATH="./${BIN_NAME}""
+BIN_NAME="hysteria-${HYSTERIA_VERSION}-linux-${ARCH}"
+BIN_PATH="./${BIN_NAME}"
 
 # ---------- 下载并校验二进制 ----------
 download_and_verify() {
