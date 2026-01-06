@@ -22,10 +22,14 @@ BIN_NAME="hysteria-linux-$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')"
 BIN_PATH="${SCRIPT_DIR}/${BIN_NAME}"
 
 # 架构检查（修复正则语法）
-if [[ ! "$BIN_NAME" =～ ^hysteria-linux-(amd64|arm64)$ ]]; then
-    echo "❌ 不支持的 CPU 架构: $(uname -m)" >&2
-    exit 1
-fi
+case "$BIN_NAME" in
+    hysteria-linux-amd64|hysteria-linux-arm64)
+        ;;
+    *)
+        echo "❌ 不支持的架构: $(uname -m)" >&2
+        exit 1
+        ;;
+esac
 
 # ========== 参数解析 ==========
 SERVER_PORT="$DEFAULT_PORT"
