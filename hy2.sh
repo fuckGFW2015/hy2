@@ -7,8 +7,6 @@ set -euo pipefail
 
 # ---------- 默认配置 ----------
 HYSTERIA_RELEASE_TAG="app/v2.6.5"   # GitHub release tag（带 app/）
-# 不再需要 HYSTERIA_VERSION 用于文件名！
-
 DEFAULT_PORT=29999
 SNI=""
 ALPN="h3"
@@ -19,6 +17,17 @@ CERT_FILE="cert.pem"
 KEY_FILE="key.pem"
 CONFIG_FILE="server.yaml"
 SERVICE_NAME="hysteria2.service"
+
+# 使用绝对路径，避免相对路径问题
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN_NAME="hysteria-linux-$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')"
+BIN_PATH="${SCRIPT_DIR}/${BIN_NAME}"
+
+# 检查架构是否支持
+if [[ ! "$BIN_NAME" =～ ^(hysteria-linux-amd64|hysteria-linux-arm64)$ ]]; then
+    echo "❌ 不支持的 CPU 架构: $(uname -m)" >&2
+    exit 1
+fi
 
 # ---------- 工具函数 ----------
 log() {
@@ -81,48 +90,42 @@ if [[ -z "$SNI" ]]; then
     warn "未指定域名，SNI 将使用默认值: $SNI（仅用于伪装，建议绑定真实域名）"
 fi
 
-# ---------- 架构检测 ----------
-arch_name() {
-    case "$(uname -m)" in
-        x86_64|amd64) echo "amd64" ;;
-        aarch64|arm64) echo "arm64" ;;
-        *) exit 1 ;;
-    esac
-}
-
-ARCH=$(arch_name)
-BIN_NAME="hysteria-linux-${ARCH}"      # ← 关键：无版本号
-BIN_PATH="./${BIN_NAME}"
-
 # ---------- 下载并校验二进制 ----------
 download_and_verify() {
+    # 检查是否已存在有效二进制
     if [[ -f "$BIN_PATH" ]]; then
-        success "二进制已存在，跳过下载。"
-        return
+        # 检查是否为有效 ELF 可执行文件（兼容无 file 命令的系统）
+        if [[ $(head -c4 "$BIN_PATH" 2>/dev/null) == $'\x7fELF' ]]; then
+            success "有效的二进制已存在，跳过下载。"
+            chmod +x "$BIN_PATH" 2>/dev/null || true
+            return
+        else
+            warn "现有文件不是有效可执行文件，将重新下载。"
+            rm -f "$BIN_PATH"
+        fi
     fi
 
-    # ✅ 修正：使用 RELEASE_TAG，不是 VERSION
     local url="https://github.com/apernet/hysteria/releases/download/${HYSTERIA_RELEASE_TAG}/${BIN_NAME}"
     local sha_url="https://github.com/apernet/hysteria/releases/download/${HYSTERIA_RELEASE_TAG}/hashes.txt"
 
     info "正在下载 Hysteria2 二进制: ${url}"
-    curl -L --retry 3 --connect-timeout 30 -o "$BIN_PATH" "$url" || error "下载失败"
+    curl -fL --retry 3 --connect-timeout 30 -o "$BIN_PATH" "$url" || error "下载失败（请检查网络或 GitHub 可达性）"
 
     info "正在下载 SHA256 校验列表: ${sha_url}"
-    local sha_file="hashes.txt"
-    curl -L --retry 3 --connect-timeout 30 -o "$sha_file" "$sha_url" || error "无法获取校验和"
+    local sha_file="${SCRIPT_DIR}/hashes.txt"
+    curl -fL --retry 3 --connect-timeout 30 -o "$sha_file" "$sha_url" || error "无法获取校验和"
 
-    # 计算本地文件的 SHA256
+    # 计算本地哈希
     local local_hash
     local_hash=$(sha256sum "$BIN_PATH" | cut -d' ' -f1)
 
-    # 从 hashes.txt 中查找该文件对应的官方哈希
+    # 从 hashes.txt 中提取官方哈希
     local official_hash
     official_hash=$(awk -v file="$BIN_NAME" '$2 == file {print $1}' "$sha_file")
 
     if [[ -z "$official_hash" ]]; then
         rm -f "$sha_file" "$BIN_PATH"
-        error "未在 hashes.txt 中找到文件 '$BIN_NAME' 的哈希值"
+        error "未在 hashes.txt 中找到文件 '$BIN_NAME' 的哈希值（可能文件名不匹配）"
     fi
 
     if [[ "$local_hash" == "$official_hash" ]]; then
@@ -154,19 +157,19 @@ setup_certificates() {
             info "安装 acme.sh..."
             curl https://get.acme.sh | sh
         fi
-        ~/.acme.sh/acme.sh --issue -d "$SNI" --standalone
-        ~/.acme.sh/acme.sh --install-cert -d "$SNI" \
-            --key-file "$(pwd)/$KEY_FILE" \
-            --fullchain-file "$(pwd)/$CERT_FILE"
+        ～/.acme.sh/acme.sh --issue -d "$SNI" --standalone
+        ～/.acme.sh/acme.sh --install-cert -d "$SNI" \
+            --key-file "${SCRIPT_DIR}/${KEY_FILE}" \
+            --fullchain-file "${SCRIPT_DIR}/${CERT_FILE}"
         success "Let's Encrypt 证书安装完成。"
     else
-        if [[ -f "$CERT_FILE" && -f "$KEY_FILE" ]]; then
+        if [[ -f "${SCRIPT_DIR}/${CERT_FILE}" && -f "${SCRIPT_DIR}/${KEY_FILE}" ]]; then
             success "使用现有自签名证书。"
             return
         fi
         info "生成自签名 ECDSA 证书（prime256v1）..."
         openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
-            -days 3650 -keyout "$KEY_FILE" -out "$CERT_FILE" -subj "/CN=${SNI}" \
+            -days 3650 -keyout "${SCRIPT_DIR}/${KEY_FILE}" -out "${SCRIPT_DIR}/${CERT_FILE}" -subj "/CN=${SNI}" \
             -addext "subjectAltName = DNS:${SNI}" >/dev/null 2>&1
         success "自签名证书生成成功。"
     fi
@@ -174,11 +177,11 @@ setup_certificates() {
 
 # ---------- 写入配置 ----------
 write_config() {
-    cat > "$CONFIG_FILE" <<EOF
+    cat > "${SCRIPT_DIR}/${CONFIG_FILE}" <<EOF
 listen: ":${SERVER_PORT}"
 tls:
-  cert: "$(pwd)/${CERT_FILE}"
-  key: "$(pwd)/${KEY_FILE}"
+  cert: "${SCRIPT_DIR}/${CERT_FILE}"
+  key: "${SCRIPT_DIR}/${KEY_FILE}"
   alpn:
     - "${ALPN}"
 auth:
@@ -195,7 +198,7 @@ quic:
   initial_conn_receive_window: 131072
   max_conn_receive_window: 262144
 EOF
-    success "配置文件写入: $CONFIG_FILE"
+    success "配置文件写入: ${SCRIPT_DIR}/${CONFIG_FILE}"
 }
 
 # ---------- 获取公网 IP 或域名 ----------
@@ -205,7 +208,6 @@ get_public_ip() {
         return
     fi
 
-    # 尝试自动获取公网 IP
     local ip=""
     if command -v curl >/dev/null; then
         ip=$(curl -s --max-time 5 https://ifconfig.me/ip 2>/dev/null)
@@ -213,13 +215,11 @@ get_public_ip() {
         ip=$(wget -qO- --timeout=5 https://ifconfig.me/ip 2>/dev/null)
     fi
 
-    # 验证是否为有效 IPv4 地址（简单判断）
-    if [[ -n "$ip" && "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+    if [[ -n "$ip" && "$ip" =～ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
         echo "$ip"
         return
     fi
 
-    # 自动获取失败，要求用户手动输入（非空）
     while true; do
         read -rp "⚠️ 无法自动获取公网 IP，请手动输入服务器公网 IP 或域名: " ip_input
         if [[ -n "$ip_input" ]]; then
@@ -245,8 +245,8 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=$(pwd)
-ExecStart=$(pwd)/$BIN_NAME server -c $(pwd)/$CONFIG_FILE
+WorkingDirectory=${SCRIPT_DIR}
+ExecStart=${BIN_PATH} server -c ${SCRIPT_DIR}/${CONFIG_FILE}
 Restart=on-failure
 RestartSec=5
 
@@ -287,7 +287,6 @@ print_info() {
     echo "=========================================================================="
     echo
 
-    # 防火墙提示
     info "📌 请确保防火墙已放行端口: $SERVER_PORT (TCP/UDP)"
     echo "  示例命令："
     echo "    ufw: sudo ufw allow $SERVER_PORT/tcp && sudo ufw allow $SERVER_PORT/udp"
@@ -302,6 +301,8 @@ main() {
     echo "端口: $SERVER_PORT | 域名(SNI): $SNI"
     [[ $USE_LETSENCRYPT == true ]] && echo "✅ 启用 Let's Encrypt 证书（需 80 端口开放）"
     [[ $INSTALL_AS_SERVICE == true ]] && echo "✅ 安装为 systemd 服务"
+    echo "工作目录: ${SCRIPT_DIR}"
+    echo "二进制路径: ${BIN_PATH}"
     echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 
     download_and_verify
@@ -316,7 +317,7 @@ main() {
 
     if [[ $INSTALL_AS_SERVICE == false ]]; then
         info "启动 Hysteria2 服务（前台运行）..."
-        exec "$BIN_PATH" server -c "$CONFIG_FILE"
+        exec "$BIN_PATH" server -c "${SCRIPT_DIR}/${CONFIG_FILE}"
     else
         info "服务已在后台运行（systemd）。"
     fi
