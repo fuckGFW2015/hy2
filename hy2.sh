@@ -101,8 +101,9 @@ download_and_verify() {
         return
     fi
 
-    local url="https://github.com/apernet/hysteria/releases/download/${HYSTERIA_VERSION}/${BIN_NAME}"
-    local sha_url="https://github.com/apernet/hysteria/releases/download/${HYSTERIA_VERSION}/hashes.txt"
+    # ✅ 修正：使用 RELEASE_TAG，不是 VERSION
+    local url="https://github.com/apernet/hysteria/releases/download/${HYSTERIA_RELEASE_TAG}/${BIN_NAME}"
+    local sha_url="https://github.com/apernet/hysteria/releases/download/${HYSTERIA_RELEASE_TAG}/hashes.txt"
 
     info "正在下载 Hysteria2 二进制: ${url}"
     curl -L --retry 3 --connect-timeout 30 -o "$BIN_PATH" "$url" || error "下载失败"
@@ -133,6 +134,7 @@ download_and_verify() {
         error "❌ 校验失败！\n本地哈希: $local_hash\n官方哈希: $official_hash"
     fi
 }
+
 # ---------- 生成随机密码 ----------
 generate_password() {
     openssl rand -base64 32 | tr -d "=+/" | cut -c1-24
