@@ -8,7 +8,7 @@
 
 ```
 
-bash <(curl -fsSL https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/heads/main/hy2.sh)
+curl -fsSL https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/heads/main/hy2.sh | bash -s -- -p 29999 --service
 
 ```
 ## 或
