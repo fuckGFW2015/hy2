@@ -111,15 +111,24 @@ download_and_verify() {
     local sha_file="hashes.txt"
     curl -L --retry 3 --connect-timeout 30 -o "$sha_file" "$sha_url" || error "无法获取校验和"
 
-    info "正在进行 SHA256 完整性校验..."
-    if ! grep -E "^\w+\s+$BIN_NAME\$" "$sha_file" | sha256sum -c --status; then
+    # 提取对应文件的哈希行（精确匹配文件名）
+    local matched_line
+    matched_line=$(grep -E "^[a-f0-9]{64}  ${BIN_NAME}\$" "$sha_file")
+
+    if [[ -z "$matched_line" ]]; then
         rm -f "$sha_file" "$BIN_PATH"
-        error "二进制文件校验失败！可能被篡改，请勿使用。"
+        error "未在 hashes.txt 中找到 $BIN_NAME 的哈希值"
     fi
 
-    rm -f "$sha_file"
-    chmod +x "$BIN_PATH"
-    success "二进制验证通过并设为可执行: $BIN_PATH"
+    # 使用该行进行校验
+    if echo "$matched_line" | sha256sum -c --status; then
+        success "✅ 二进制 SHA256 校验通过！"
+        rm -f "$sha_file"
+        chmod +x "$BIN_PATH"
+    else
+        rm -f "$sha_file" "$BIN_PATH"
+        error "❌ 二进制文件校验失败！可能被篡改，请勿使用。"
+    fi
 }
 
 # ---------- 生成随机密码 ----------
