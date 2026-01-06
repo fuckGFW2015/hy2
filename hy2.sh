@@ -91,8 +91,10 @@ arch_name() {
 }
 
 ARCH=$(arch_name)
-BIN_NAME="hysteria-linux-${ARCH}"
-BIN_PATH="./${BIN_NAME}"
+HYSTERIA_VERSION_TAG="app/v2.6.5"
+HYSTERIA_VERSION_NUM="2.6.5"   # 从 tag 中提取纯版本号
+BIN_NAME="hysteria-${HYSTERIA_VERSION_NUM}-linux-${ARCH}"
+BIN_PATH="./${BIN_NAME}""
 
 # ---------- 下载并校验二进制 ----------
 download_and_verify() {
