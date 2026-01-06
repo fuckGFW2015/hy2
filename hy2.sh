@@ -67,10 +67,35 @@ download_binary() {
     success "二进制下载完成"
 }
 
+# ========== SHA256 校验 ==========
+verify_checksum() {
+    local tag_encoded="${HYSTERIA_RELEASE_TAG//\//%2F}"
+    local hash_url="https://github.com/apernet/hysteria/releases/download/${tag_encoded}/hashes.txt"
+    
+    log "正在下载哈希校验文件: $hash_url"
+    curl -fsSL --retry 3 -o /tmp/hashes.txt "$hash_url" || error "无法下载 hashes.txt"
+
+    # 从 hashes.txt 提取对应文件的 SHA256
+    expected_sha=$(awk -v bin="$BIN_NAME" '$2 == bin {print $1}' /tmp/hashes.txt)
+    if [[ -z "$expected_sha" ]]; then
+        error "未在 hashes.txt 中找到 '$BIN_NAME' 的哈希值"
+    fi
+
+    actual_sha=$(sha256sum "$BIN_PATH" | awk '{print $1}')
+    if [[ "$expected_sha" != "$actual_sha" ]]; then
+        error "SHA256 校验失败！\n期望: $expected_sha\n实际: $actual_sha"
+    fi
+
+    success "SHA256 校验通过"
+    rm -f /tmp/hashes.txt
+}
+
+# ========== 生成密码 ==========
 generate_password() {
     openssl rand -base64 32 | tr -d "=+/" | cut -c1-24
 }
 
+# ========== 证书生成 ==========
 setup_cert() {
     if [[ -f "$CERT_FILE" && -f "$KEY_FILE" ]]; then
         success "使用现有证书"
@@ -132,6 +157,7 @@ EOF
     success "systemd 服务已启用"
 }
 
+# ========== 获取公网 IP ==========
 get_ip() {
     ip=$(curl -s https://ifconfig.me/ip 2>/dev/null || echo "YOUR_SERVER_IP")
     echo "$ip"
