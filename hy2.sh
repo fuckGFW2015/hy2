@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # ---------- 默认配置 ----------
-HYSTERIA_VERSION="v2.6.5"
+HYSTERIA_VERSION="app/v2.6.5"
 DEFAULT_PORT=29999
 SNI=""
 ALPN="h3"
