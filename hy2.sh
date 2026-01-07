@@ -121,7 +121,7 @@ subjectAltName = DNS:${SNI}
 EOF
 
     log "生成自签名 ECDSA 证书..."
-    openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+    openssl req -batch -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
         -days 3650 -keyout "$KEY_FILE" -out "$CERT_FILE" \
         -config "$cnf" -extensions v3_ca >/dev/null 2>&1
 
