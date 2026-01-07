@@ -119,6 +119,9 @@ auth:
 bandwidth:
   up: "100 mbps"
   down: "100 mbps"
+quic:
+   max_idle_timeout: "120s"
+   keepalive_interval: "15s"
 log:
   level: warn
 EOF
