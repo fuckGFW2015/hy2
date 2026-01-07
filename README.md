@@ -37,7 +37,10 @@ echo 'net.core.default_qdisc=fq' | sudo tee -a /etc/sysctl.conf
 echo 'net.ipv4.tcp_congestion_control=bbr' | sudo tee -a /etc/sysctl.conf
 sudo sysctl -p
 
-# 验证
+```
+## 6.验证BBR是否启用
+
+```
 echo "当前拥塞控制算法：$(cat /proc/sys/net/ipv4/tcp_congestion_control)"
 lsmod | grep bbr && echo "✅ BBR 已加载" || echo "❌ BBR 未启用"
 
