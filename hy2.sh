@@ -268,6 +268,7 @@ write_config
 install_service
 setup_firewall
 
+# ========== 获取结果并输出 ==========
 IP=$(get_ip) || { error "无法获取公网IP，请检查网络或手动配置"; }
 PASSWORD=$(cat password.txt)
 
