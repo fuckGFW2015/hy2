@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
-# Hysteria2 安全增强版部署脚本 v2
+# Hysteria2 安全增强版部署脚本 v2 (VULTR 兼容修复版)
 # 作者: stephchow
 # 更新时间: 2026-01-08
 # 特性: 架构检测 + SHA256 校验 + 自签名证书 + systemd 服务 + 防火墙自动放行 + 最小权限运行
@@ -19,7 +19,7 @@ for cmd in curl openssl sha256sum awk; do
     fi
 done
 
-# ========== 新增：内核参数优化函数（放在顶层！）==========
+# ========== 内核参数优化函数 ==========
 tune_kernel() {
     local conf_file="/etc/sysctl.d/99-hysteria.conf"
     log "正在优化网络内核参数以提升 Hysteria2 性能..."
@@ -39,7 +39,7 @@ EOF
     fi
 }
 
-# ========== 获取脚本目录（兼容管道执行）==========
+# ========== 获取脚本目录 ==========
 if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 else
@@ -49,7 +49,7 @@ fi
 # ========== 配置 ==========
 HYSTERIA_RELEASE_TAG="app/v2.6.5"
 DEFAULT_PORT=29999
-SNI="www.cloudflare.com"       # 更中性的伪装域名
+SNI="www.cloudflare.com"
 ALPN="h3"
 CERT_FILE="cert.pem"
 KEY_FILE="key.pem"
@@ -87,7 +87,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         *)
-            error "未知参数: $1"
+            error "未知参数: $1。用法: $0 [-p PORT] [--service]"
             ;;
     esac
 done
@@ -193,13 +193,11 @@ install_service() {
         return
     fi
 
-    # 创建专用用户（如果不存在）
     if ! id "$USER_NAME" &>/dev/null; then
         log "创建系统用户: $USER_NAME"
         sudo useradd --system --no-create-home --shell /usr/sbin/nologin "$USER_NAME"
     fi
     
-    # 设置文件归属
     sudo chown "$USER_NAME:$USER_NAME" "$BIN_PATH" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt"
     sudo chmod 700 "$SCRIPT_DIR"
 
@@ -246,7 +244,6 @@ setup_firewall() {
         success "Firewalld 防火墙端口已开放"
 
     elif command -v iptables &> /dev/null; then
-        # 检查规则是否存在，避免重复
         sudo iptables -C INPUT -p tcp --dport "$SERVER_PORT" -j ACCEPT 2>/dev/null || \
             sudo iptables -A INPUT -p tcp --dport "$SERVER_PORT" -j ACCEPT
         sudo iptables -C INPUT -p udp --dport "$SERVER_PORT" -j ACCEPT 2>/dev/null || \
@@ -269,16 +266,6 @@ get_ip() {
     return 1
 }
 
-# ========== 版本检查（可选，带容错）==========
-LATEST_TAG=""
-if latest_json=$(curl -fsSL --max-time 8 "https://api.github.com/repos/apernet/hysteria/releases/latest" 2>/dev/null); then
-    LATEST_TAG=$(echo "$latest_json" | grep '"tag_name":' | head -n1 | cut -d'"' -f4)
-fi
-
-if [[ -n "$LATEST_TAG" && "$LATEST_TAG" != "$HYSTERIA_RELEASE_TAG" ]]; then
-    log "💡 提示：发现新版本 $LATEST_TAG，当前使用 $HYSTERIA_RELEASE_TAG"
-fi
-
 # ========== 主流程 ==========
 log "🚀 开始部署 Hysteria2 (端口: $SERVER_PORT)"
 download_binary
@@ -286,14 +273,12 @@ verify_checksum
 setup_cert
 write_config
 install_service
-tune_kernel          # ← 新增这一行
+tune_kernel
 setup_firewall
 
-# ========== 获取结果并输出 ==========
 IP=$(get_ip) || { error "无法获取公网IP，请检查网络或手动配置"; }
 PASSWORD=$(cat password.txt)
 
-# 👇 新增：服务状态检查（仅当安装为服务时）
 if [[ "$INSTALL_AS_SERVICE" == true ]]; then
     echo
     if systemctl is-active --quiet "${SERVICE_NAME}"; then
@@ -306,7 +291,6 @@ if [[ "$INSTALL_AS_SERVICE" == true ]]; then
 fi
 
 echo
-
 echo "🎉 部署成功！"
 echo "🔑 密码: $PASSWORD"
 echo "📱 链接: hysteria2://${PASSWORD}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-Vps"
