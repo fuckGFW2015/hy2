@@ -271,7 +271,20 @@ setup_firewall
 IP=$(get_ip) || { error "无法获取公网IP，请检查网络或手动配置"; }
 PASSWORD=$(cat password.txt)
 
+# 👇 新增：服务状态检查（仅当安装为服务时）
+if [[ "$INSTALL_AS_SERVICE" == true ]]; then
+    echo
+    if systemctl is-active --quiet "${SERVICE_NAME}"; then
+        success "systemd 服务 '${SERVICE_NAME}' 正在运行"
+    else
+        log "⚠️  systemd 服务 '${SERVICE_NAME}' 未运行"
+        echo "   请运行以下命令查看详细日志："
+        echo "   sudo journalctl -u ${SERVICE_NAME} -n 50 --no-pager"
+    fi
+fi
+
 echo
+
 echo "🎉 部署成功！"
 echo "🔑 密码: $PASSWORD"
 echo "📱 链接: hysteria2://${PASSWORD}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-Vps"
