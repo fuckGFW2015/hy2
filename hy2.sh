@@ -11,7 +11,7 @@ log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*" >&2; }
 error() { log "❌ ERROR: $*" >&2; exit 1; }
 success() { log "✅ SUCCESS: $*"; }
 
-# 检查必要命令
+# ========== 依赖检查 ==========
 for cmd in curl openssl sha256sum awk; do
     if ! command -v "$cmd" &> /dev/null; then
         error "缺少必要命令: $cmd，请先安装"
