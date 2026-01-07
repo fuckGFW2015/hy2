@@ -69,6 +69,56 @@ lsmod | grep bbr
 
 ```
 
+## 7.卸载脚本
+
+```
+#!/bin/bash
+
+# 停止并移除服务
+sudo systemctl stop hysteria2.service
+sudo systemctl disable hysteria2.service
+sudo rm -f /etc/systemd/system/hysteria2.service
+sudo systemctl daemon-reload
+
+# 删除安装目录
+sudo rm -rf /etc/hysteria2
+
+# 删除用户（可选）
+sudo userdel hysteria2 2>/dev/null || true
+
+# 清理内核优化
+sudo rm -f /etc/sysctl.d/99-hysteria.conf
+sudo sysctl --system >/dev/null 2>&1
+
+# 关闭防火墙端口（默认 29999，如使用其他端口请先修改！）
+PORT=29999
+
+if command -v ufw &>/dev/null; then
+    sudo ufw delete allow "$PORT/tcp" 2>/dev/null || true
+    sudo ufw delete allow "$PORT/udp" 2>/dev/null || true
+elif command -v firewall-cmd &>/dev/null; then
+    sudo firewall-cmd --permanent --remove-port="$PORT/tcp" 2>/dev/null || true
+    sudo firewall-cmd --permanent --remove-port="$PORT/udp" 2>/dev/null || true
+    sudo firewall-cmd --reload
+fi
+
+echo "✅ Hysteria2 已完全卸载！"
+
+```
+
+## 8. 验证卸载结果
+```
+执行完后，可以手动检查
+# 检查服务是否存在
+systemctl list-unit-files | grep hysteria2
+
+# 检查文件是否删除
+ls /etc/hysteria2  # 应该提示“没有那个文件或目录”
+
+# 检查端口是否关闭
+ss -uln | grep ':29999'  # 应该无输出
+```
+
 # 安全保证
 
 本脚本严格遵循以下安全原则：
