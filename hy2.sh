@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
-# Hysteria2 安全增强版部署脚本 v2 (VULTR 兼容修复版)
+# Hysteria2 安全增强版部署脚本 v2
 # 作者: stephchow
 # 更新时间: 2026-01-08
 # 特性: 架构检测 + SHA256 校验 + 自签名证书 + systemd 服务 + 防火墙自动放行 + 最小权限运行
