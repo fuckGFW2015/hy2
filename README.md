@@ -14,7 +14,17 @@ sudo yum update -y  # CentOS
 ```
 ## 2.重启 (可选)： sudo reboot
 
-## 3.安裝必要工具： sudo apt install curl openssl -y
+## 3.安裝必要工具： 
+```
+# Debian/Ubuntu
+sudo apt update && sudo apt install -y curl openssl coreutils gawk
+
+# CentOS/Rocky/AlmaLinux
+sudo yum install -y curl openssl coreutils gawk
+# 或（较新版本）
+sudo dnf install -y curl openssl coreutils gawk
+
+```
 
 ## 4.一键部署脚本
 
