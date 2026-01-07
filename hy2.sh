@@ -205,6 +205,6 @@ PASSWORD=$(cat password.txt)
 echo
 echo "🎉 部署成功！"
 echo "🔑 密码: $PASSWORD"
-echo "📱 链接: hysteria2://${PASSWORD}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-Fixed"
+echo "📱 链接: hysteria2://${PASSWORD}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-Vps"
 echo
 log "📌 请放行防火墙端口: $SERVER_PORT (TCP/UDP)"
