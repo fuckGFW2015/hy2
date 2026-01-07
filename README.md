@@ -30,7 +30,7 @@ sudo dnf install -y curl openssl coreutils gawk
 
 ```
 # 2. 一键部署（无需 sudo！）
-curl -fsSL -o hy2.sh https://raw.githubusercontent.com/fuckGFW2015/hy2/main/hy2.sh && chmod +x hy2.sh && ./hy2.sh -p 29999 --service
+curl -fsSL -o hy2.sh https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/heads/main/hy2.sh && chmod +x hy2.sh && ./hy2.sh -p 29999 --service
 
 ```
 ## 默认端口29999，自定义的话，在-p后面加上你的服务器端口。比如./hy2.sh -p 3183 --service
