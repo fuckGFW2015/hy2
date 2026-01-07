@@ -6,6 +6,13 @@
 
 set -euo pipefail
 
+# 检查必要命令
+for cmd in curl openssl sha256sum awk; do
+    if ! command -v "$cmd" &> /dev/null; then
+        error "缺少必要命令: $cmd，请先安装"
+    fi
+done
+
 # ========== 配置 ==========
 HYSTERIA_RELEASE_TAG="app/v2.6.5"
 DEFAULT_PORT=29999
@@ -97,10 +104,26 @@ setup_cert() {
         success "使用现有证书"
         return
     fi
+
+    # 创建临时 OpenSSL 配置
+    local cnf="/tmp/openssl_hy2.cnf"
+    cat > "$cnf" <<EOF
+[req]
+default_bits = 256
+distinguished_name = dn
+prompt = no
+[dn]
+CN = ${SNI}
+[v3_ca]
+subjectAltName = DNS:${SNI}
+EOF
+
     log "生成自签名 ECDSA 证书..."
     openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
         -days 3650 -keyout "$KEY_FILE" -out "$CERT_FILE" \
-        -subj "/CN=${SNI}" -addext "subjectAltName = DNS:${SNI}" >/dev/null 2>&1
+        -config "$cnf" -extensions v3_ca >/dev/null 2>&1
+
+    rm -f "$cnf"
     success "自签名证书生成成功"
 }
 
@@ -159,7 +182,11 @@ EOF
 }
 
 get_ip() {
-    ip=$(curl -s https://ifconfig.me/ip 2>/dev/null || echo "YOUR_SERVER_IP")
+    ip=$(curl -s https://ifconfig.me/ip 2>/dev/null)
+    if [[ -z "$ip" || "$ip" == *"error"* ]]; then
+        echo "获取公网IP失败，请手动替换为你的服务器IP"
+        return 1
+    fi
     echo "$ip"
 }
 
@@ -170,6 +197,7 @@ verify_checksum          # ← 关键：补上校验！
 setup_cert
 write_config
 install_service
+IP=$(get_ip) || { error "无法获取公网IP，请检查网络或手动配置"; }
 
 IP=$(get_ip)
 PASSWORD=$(cat password.txt)
