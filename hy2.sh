@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
-# Hysteria2 安全修复版部署脚本（兼容 BASH_SOURCE 问题 + 正确 release tag）
-# # 作者: stephchow
+# Hysteria2 安全修复版部署脚本（兼容 BASH_SOURCE + SHA256 校验 + systemd 支持）
+# 作者: stephchow
 # 更新时间: 2026-01-07
 
 set -euo pipefail
@@ -16,12 +16,12 @@ KEY_FILE="key.pem"
 CONFIG_FILE="server.yaml"
 SERVICE_NAME="hysteria2.service"
 
-# 使用当前目录作为工作目录（解决 BASH_SOURCE 问题）
+# 使用当前目录作为工作目录（兼容管道执行）
 SCRIPT_DIR="$(pwd)"
 BIN_NAME="hysteria-linux-$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')"
 BIN_PATH="${SCRIPT_DIR}/${BIN_NAME}"
 
-# 架构检查（修复正则语法）
+# 架构检查
 case "$BIN_NAME" in
     hysteria-linux-amd64|hysteria-linux-arm64)
         ;;
@@ -67,7 +67,6 @@ download_binary() {
     success "二进制下载完成"
 }
 
-# ========== SHA256 校验 ==========
 verify_checksum() {
     local tag_encoded="${HYSTERIA_RELEASE_TAG//\//%2F}"
     local hash_url="https://github.com/apernet/hysteria/releases/download/${tag_encoded}/hashes.txt"
@@ -75,7 +74,6 @@ verify_checksum() {
     log "正在下载哈希校验文件: $hash_url"
     curl -fsSL --retry 3 -o /tmp/hashes.txt "$hash_url" || error "无法下载 hashes.txt"
 
-    # 从 hashes.txt 提取对应文件的 SHA256
     expected_sha=$(awk -v bin="$BIN_NAME" '$2 == bin {print $1}' /tmp/hashes.txt)
     if [[ -z "$expected_sha" ]]; then
         error "未在 hashes.txt 中找到 '$BIN_NAME' 的哈希值"
@@ -83,19 +81,17 @@ verify_checksum() {
 
     actual_sha=$(sha256sum "$BIN_PATH" | awk '{print $1}')
     if [[ "$expected_sha" != "$actual_sha" ]]; then
-        error "SHA256 校验失败！\n期望: $expected_sha\n实际: $actual_sha"
+        error "SHA256 校验失败！期望: $expected_sha，实际: $actual_sha"
     fi
 
     success "SHA256 校验通过"
     rm -f /tmp/hashes.txt
 }
 
-# ========== 生成密码 ==========
 generate_password() {
     openssl rand -base64 32 | tr -d "=+/" | cut -c1-24
 }
 
-# ========== 证书生成 ==========
 setup_cert() {
     if [[ -f "$CERT_FILE" && -f "$KEY_FILE" ]]; then
         success "使用现有证书"
@@ -121,8 +117,8 @@ auth:
   type: password
   password: "${AUTH_PASSWORD}"
 bandwidth:
-  up: "200 mbps"
-  down: "200 mbps"
+  up: "300 mbps"
+  down: "300 mbps"
 quic:
   max_idle_timeout: "120s"
   keepalive_interval: "15s"
@@ -134,7 +130,11 @@ EOF
 }
 
 install_service() {
-    if [[ "$INSTALL_AS_SERVICE" == false ]]; then return; fi
+    if [[ "$INSTALL_AS_SERVICE" == false ]]; then
+        return
+    fi
+
+    log "正在生成 systemd 服务文件..."
     cat > /tmp/hysteria2.service <<EOF
 [Unit]
 Description=Hysteria2 Server
@@ -151,13 +151,13 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
+
     sudo mv /tmp/hysteria2.service "/etc/systemd/system/${SERVICE_NAME}"
     sudo systemctl daemon-reload
     sudo systemctl enable --now "${SERVICE_NAME}"
-    success "systemd 服务已启用"
+    success "systemd 服务已启用并启动"
 }
 
-# ========== 获取公网 IP ==========
 get_ip() {
     ip=$(curl -s https://ifconfig.me/ip 2>/dev/null || echo "YOUR_SERVER_IP")
     echo "$ip"
@@ -166,6 +166,7 @@ get_ip() {
 # ========== 主流程 ==========
 log "🚀 开始部署 Hysteria2 (端口: $SERVER_PORT)"
 download_binary
+verify_checksum          # ← 关键：补上校验！
 setup_cert
 write_config
 install_service
