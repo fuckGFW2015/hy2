@@ -58,8 +58,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ========== 函数 ==========
-log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*" >&2; }
-error() { log "❌ ERROR: $*" >&2; exit 1; }
 success() { log "✅ SUCCESS: $*"; }
 
 download_binary() {
