@@ -19,7 +19,7 @@ sudo yum update -y  # CentOS
 curl -fsSL -o hy2.sh https://raw.githubusercontent.com/fuckGFW2015/hy2/main/hy2.sh && chmod +x hy2.sh && sudo ./hy2.sh -p 29999 --service
 
 ```
-
+## 默认端口29999，自定义的话，在-p后面加上你的服务器端口。比如sudo ./hy2.sh -p 3183 --service
 # 3.部署后验证
 
 ```
