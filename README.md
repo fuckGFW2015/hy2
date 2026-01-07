@@ -43,7 +43,9 @@ uname -r
 ✅ 如果输出类似 5.4.0, 5.15.0, 6.1.0 等 → 支持 BBR。
 
 ```
-# 开启 BBR
+# 清理旧配置并启用 BBR
+sudo sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
+sudo sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
 echo 'net.core.default_qdisc=fq' | sudo tee -a /etc/sysctl.conf
 echo 'net.ipv4.tcp_congestion_control=bbr' | sudo tee -a /etc/sysctl.conf
 sudo sysctl -p
