@@ -34,7 +34,7 @@ curl -fsSL -o hy2.sh https://raw.githubusercontent.com/fuckGFW2015/hy2/main/hy2.
 
 ```
 ## 默认端口29999，自定义的话，在-p后面加上你的服务器端口。比如sudo ./hy2.sh -p 3183 --service
-## 5.一键开启 BBR（适用于 Ubuntu/Debian）
+## 5.一键开启 BBR（要求 Linux 内核 ≥ 4.9）
 BBR 要求：
 Linux 内核 ≥ 4.9
 （搬瓦工大多数系统如 Ubuntu 20.04+/Debian 10+ 默认满足）
