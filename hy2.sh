@@ -32,7 +32,7 @@ case "$BIN_NAME" in
 esac
 
 # ========== 参数解析 ==========
-SERVER_PORT="$DEFAULT_PORT"
+SERVER_PORT="$DEFAULT_PORT" # 默认29999
 INSTALL_AS_SERVICE=false
 
 while [[ $# -gt 0 ]]; do
