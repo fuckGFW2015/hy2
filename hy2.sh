@@ -106,9 +106,13 @@ setup_cert() {
 }
 
 write_config() {
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    
     AUTH_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-24)
+    
     cat > "$CONFIG_FILE" <<EOF
-listen: ":${SERVER_PORT}"
+server:
+  listen: ":${SERVER_PORT}"
 tls:
   cert: "${INSTALL_DIR}/${CERT_FILE}"
   key: "${INSTALL_DIR}/${KEY_FILE}"
@@ -120,12 +124,17 @@ bandwidth:
   up: "100 mbps"
   down: "100 mbps"
 quic:
-   max_idle_timeout: "120s"
-   keepalive_interval: "15s"
+  max_idle_timeout: "120s"
+  keepalive_interval: "15s"
 log:
   level: warn
 EOF
+
+    chmod 600 "$CONFIG_FILE"
     echo "$AUTH_PASSWORD" > "password.txt"
+    chmod 600 "password.txt"
+    
+    success "✅ 配置文件和密码已保存（权限 600）"
 }
 
 install_service() {
