@@ -397,9 +397,9 @@ auth:
 
 bandwidth:
 
-  up: "200 mbps"
+  up: "100 mbps"
 
-  down: "200 mbps"
+  down: "100 mbps"
 
 quic:
 
