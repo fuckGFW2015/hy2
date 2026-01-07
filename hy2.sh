@@ -117,8 +117,8 @@ auth:
   type: password
   password: "${AUTH_PASSWORD}"
 bandwidth:
-  up: "300 mbps"
-  down: "300 mbps"
+  up: "200 mbps"
+  down: "200 mbps"
 quic:
   max_idle_timeout: "120s"
   keepalive_interval: "15s"
