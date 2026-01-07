@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
 # Hysteria2 安全增强版部署脚本 v2.1
+# 作者: stephchow
 # 更新: 2026-01-08 | 修复路径权限逻辑 & 内核优化
 
 set -euo pipefail
