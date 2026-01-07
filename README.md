@@ -54,7 +54,7 @@ echo "当前拥塞控制算法：$cc"
 
 🔒 所有二进制文件 仅从 https://github.com/apernet/hysteria 下载
 
-🌐 不上报服务器公网 IP，获取公网IP时使用ifconfig.me（公开、可信的IP查询服务）
+🌐 获取公网 IP 时仅连接一次公开服务 ifconfig.me（该服务声称不记录访问日志），不会将 IP 发送给任何第三方或作者服务器。
 
 🔑 仅连接到可信的GitHub和Let's Encrypt服务，无隐藏的数据上传或外联
 
