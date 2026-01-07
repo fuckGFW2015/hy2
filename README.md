@@ -41,8 +41,9 @@ sudo sysctl -p
 ## 6.验证BBR是否启用
 
 ```
-echo "当前拥塞控制算法：$(cat /proc/sys/net/ipv4/tcp_congestion_control)"
-lsmod | grep bbr && echo "✅ BBR 已加载" || echo "❌ BBR 未启用"
+cc=$(cat /proc/sys/net/ipv4/tcp_congestion_control)
+echo "当前拥塞控制算法：$cc"
+[[ "$cc" == "bbr" ]] && echo "✅ BBR 已启用" || echo "❌ BBR 未启用"
 
 ```
 
