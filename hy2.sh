@@ -198,8 +198,6 @@ setup_cert
 write_config
 install_service
 IP=$(get_ip) || { error "无法获取公网IP，请检查网络或手动配置"; }
-
-IP=$(get_ip)
 PASSWORD=$(cat password.txt)
 
 echo
