@@ -29,7 +29,7 @@ sudo dnf install -y curl openssl coreutils gawk
 ## 4.一键部署脚本
 
 ```
-# 2. 一键部署（无需 sudo！）
+
 curl -fsSL -o hy2.sh https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/heads/main/hy2.sh && chmod +x hy2.sh && ./hy2.sh -p 29999 --service
 
 ```
@@ -56,8 +56,16 @@ sudo sysctl -p
 
 ```
 cc=$(cat /proc/sys/net/ipv4/tcp_congestion_control)
+
 echo "当前拥塞控制算法：$cc"
+
 [[ "$cc" == "bbr" ]] && echo "✅ BBR 已启用" || echo "❌ BBR 未启用"
+
+sysctl net.ipv4.tcp_congestion_control
+# 应输出：net.ipv4.tcp_congestion_control = bbr
+
+lsmod | grep bbr
+# 应看到 bbr 模块（如：bbr 20480 12）
 
 ```
 
