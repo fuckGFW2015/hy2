@@ -6,6 +6,10 @@
 
 set -euo pipefail
 
+# ========== 提前定义 error 函数 ==========
+log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*" >&2; }
+error() { log "❌ ERROR: $*" >&2; exit 1; }
+
 # 检查必要命令
 for cmd in curl openssl sha256sum awk; do
     if ! command -v "$cmd" &> /dev/null; then
