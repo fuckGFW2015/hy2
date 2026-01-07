@@ -239,7 +239,7 @@ setup_firewall() {
 }
 
 get_ip() {
-    for url in https://ifconfig.me/ip https://api.ipify.org https://ipecho.net/plain; do
+    for url in https://ifconfig.me/ip https://api.ipify.org; do
         ip=$(curl -s --max-time 5 "$url" 2>/dev/null)
         if [[ "$ip" =～ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "$ip"
