@@ -19,6 +19,26 @@ for cmd in curl openssl sha256sum awk; do
     fi
 done
 
+# ========== 新增：内核参数优化函数（放在顶层！）==========
+tune_kernel() {
+    local conf_file="/etc/sysctl.d/99-hysteria.conf"
+    log "正在优化网络内核参数以提升 Hysteria2 性能..."
+
+    cat > /tmp/99-hysteria.conf <<EOF
+# Hysteria2 performance tuning
+net.core.rmem_max = 8388608
+net.core.wmem_max = 8388608
+net.core.rmem_default = 1048576
+net.core.wmem_default = 1048576
+EOF
+
+    if sudo mv /tmp/99-hysteria.conf "$conf_file" && sudo sysctl --system >/dev/null 2>&1; then
+        success "内核网络参数已优化"
+    else
+        log "⚠️  无法应用 sysctl 配置（可能权限不足），跳过优化"
+    fi
+}
+
 # ========== 获取脚本目录（兼容管道执行）==========
 if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -178,7 +198,7 @@ install_service() {
         log "创建系统用户: $USER_NAME"
         sudo useradd --system --no-create-home --shell /usr/sbin/nologin "$USER_NAME"
     fi
-
+    
     # 设置文件归属
     sudo chown "$USER_NAME:$USER_NAME" "$BIN_PATH" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt"
     sudo chmod 700 "$SCRIPT_DIR"
@@ -266,6 +286,7 @@ verify_checksum
 setup_cert
 write_config
 install_service
+tune_kernel          # ← 新增这一行
 setup_firewall
 
 # ========== 获取结果并输出 ==========
