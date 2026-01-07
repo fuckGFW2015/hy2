@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
-# Hysteria2 安全修复版部署脚本（兼容 BASH_SOURCE + SHA256 校验 + systemd 支持）
+# Hysteria2 安全修复版部署脚本（兼容 BASH_SOURCE + SHA256 校验 + systemd 支持 + 防火墙自动放行）
 # 作者: stephchow
 # 更新时间: 2026-01-07
 
 set -euo pipefail
 
-# ========== 提前定义 error 函数 ==========
+# ========== 提前定义 log 和 error 函数 ==========
 log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*" >&2; }
 error() { log "❌ ERROR: $*" >&2; exit 1; }
+success() { log "✅ SUCCESS: $*"; }
 
 # 检查必要命令
 for cmd in curl openssl sha256sum awk; do
@@ -57,8 +58,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# ========== 函数 ==========
-success() { log "✅ SUCCESS: $*"; }
+# ========== 功能函数 ==========
 
 download_binary() {
     if [[ -f "$BIN_PATH" ]]; then
@@ -183,6 +183,27 @@ EOF
     success "systemd 服务已启用并启动"
 }
 
+# ========== 新增防火墙配置函数 ==========
+setup_firewall() {
+    log "正在配置防火墙放行端口: ${SERVER_PORT}..."
+    
+    # 针对 Ubuntu/Debian 常见的 UFW
+    if command -v ufw &> /dev/null && sudo ufw status | grep -q "active"; then
+        sudo ufw allow "${SERVER_PORT}/tcp" >/dev/null
+        sudo ufw allow "${SERVER_PORT}/udp" >/dev/null
+        success "UFW 防火墙端口已开放"
+        
+    # 针对 CentOS/RHEL 常见的 Firewalld
+    elif command -v firewall-cmd &> /dev/null && sudo systemctl is-active --quiet firewalld; then
+        sudo firewall-cmd --permanent --add-port="${SERVER_PORT}/tcp" >/dev/null 2>&1
+        sudo firewall-cmd --permanent --add-port="${SERVER_PORT}/udp" >/dev/null 2>&1
+        sudo firewall-cmd --reload >/dev/null
+        success "Firewalld 防火墙端口已开放"
+    else
+        log "未检测到运行中的防火墙(UFW/Firewalld)，跳过配置"
+    fi
+}
+
 get_ip() {
     ip=$(curl -s https://ifconfig.me/ip 2>/dev/null)
     if [[ -z "$ip" || "$ip" == *"error"* ]]; then
@@ -199,6 +220,7 @@ verify_checksum          # ← 关键：补上校验！
 setup_cert
 write_config
 install_service
+setup_firewall
 IP=$(get_ip) || { error "无法获取公网IP，请检查网络或手动配置"; }
 PASSWORD=$(cat password.txt)
 
