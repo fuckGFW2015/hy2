@@ -147,16 +147,17 @@ EOF
 }
 
 install_service() {
+    # 1. 检查是否需要安装服务
     if [[ "$INSTALL_AS_SERVICE" == false ]]; then return; fi
 
-     # ========== 新增：确保存在所有必要文件 ==========
+    # 2. 确保所有必要文件都已生成（防止空跑）
     for file in "${BIN_NAME}" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt"; do
         if [[ ! -f "$file" ]]; then
             error "服务模式所需文件缺失: $file"
         fi
     done
     
-  # ============================================  
+    # 3. 准备环境：创建目录和系统用户
     log "准备安装目录: $INSTALL_DIR"
     sudo mkdir -p "$INSTALL_DIR"
     
@@ -164,23 +165,22 @@ install_service() {
         sudo useradd --system --no-create-home --shell /usr/sbin/nologin "$USER_NAME"
     fi
 
-    # 移动文件到安装目录
+    # 4. 迁移文件并设置基本权限
+    log "正在将文件迁移至系统目录..."
     sudo mv "${BIN_NAME}" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt" "$INSTALL_DIR/"
     sudo chown -R "$USER_NAME:$USER_NAME" "$INSTALL_DIR"
     sudo chmod 700 "$INSTALL_DIR"
-    
- # >>> 新增：设置 capabilities（仅当端口 <1024）
+
+    # 5. 核心修复：针对低位端口 (如 443) 授予特权
     if (( SERVER_PORT < 1024 )); then
-        log "端口 $SERVER_PORT < 1024，正在授予 CAP_NET_BIND_SERVICE 能力..."
-        if ! sudo setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/${BIN_NAME}"; then
-            error "❌ 无法设置 CAP_NET_BIND_SERVICE 能力。请确保文件系统支持 extended attributes。"
-        fi
-        log "已授予能力: $(getcap "$INSTALL_DIR/${BIN_NAME}" 2>/dev/null)"
+        log "检测到特权端口 $SERVER_PORT，正在授予二进制文件监听权限..."
+        sudo setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/${BIN_NAME}"
     fi
 
-        # >>> 新增：生成带 AmbientCapabilities 的 systemd 服务
+    # 6. 生成 systemd 服务文件
     log "配置 systemd 服务..."
-    sudo tee "/etc/systemd/system/${SERVICE_NAME}.service" > /dev/null <<EOF
+    # 注意：确保变量 SERVICE_NAME 不带 .service 后缀，或者下方 tee 路径不重复加后缀
+    sudo tee "/etc/systemd/system/${SERVICE_NAME}" > /dev/null <<EOF
 [Unit]
 Description=Hysteria2 Server
 After=network.target
@@ -189,31 +189,27 @@ After=network.target
 Type=simple
 User=${USER_NAME}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/${BIN_NAME} server -c ${INSTALL_DIR}/server.yaml
+ExecStart=${INSTALL_DIR}/${BIN_NAME} server -c ${INSTALL_DIR}/${CONFIG_FILE}
 Restart=on-failure
-RestartSec=3s
+RestartSec=5s
 
-$(if (( SERVER_PORT < 1024 )); then
-    echo "# 允许绑定低端口"
-    echo "AmbientCapabilities=CAP_NET_BIND_SERVICE"
-fi)
+$( (( SERVER_PORT < 1024 )) && echo "AmbientCapabilities=CAP_NET_BIND_SERVICE" )
 
 NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
+ProtectSystem=full
+# 增加安全性限制
 PrivateTmp=true
-RestrictAddressFamilies=AF_INET AF_INET6
-RestrictNamespaces=true
-MemoryDenyWriteExecute=true
+ProtectHome=true
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
+    # 7. 启动并激活服务
     sudo systemctl daemon-reload
     sudo systemctl enable --now "${SERVICE_NAME}"
+    success "Systemd 服务已安装并尝试启动"
 }
-
 setup_firewall() {
     log "配置防火墙端口: $SERVER_PORT"
     if command -v ufw &>/dev/null; then
