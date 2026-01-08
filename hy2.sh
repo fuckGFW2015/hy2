@@ -88,6 +88,9 @@ tls:
 auth:
   type: password
   password: "${AUTH_PASSWORD}"
+quic:
+  max_idle_timeout: "120s"
+  keepalive_interval: "15s"
 log:
   level: warn
 EOF
