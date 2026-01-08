@@ -147,25 +147,48 @@ EOF
 }
 
 install_service() {
+    # 1. 检查是否需要安装服务
     if [[ "$INSTALL_AS_SERVICE" == false ]]; then return; fi
+
+    # 2. 确保所有必要文件都已生成
+    for file in "${BIN_NAME}" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt"; do
+        if [[ ! -f "$file" ]]; then
+            error "服务模式所需文件缺失: $file"
+        fi
+    done
     
-    # 确保目录干净且存在
+    # 3. 准备环境
+    log "准备安装目录: $INSTALL_DIR"
     sudo mkdir -p "$INSTALL_DIR"
     
-    # 授权：必须先 chown 再启动，否则用户读不到证书
-    sudo mv "${BIN_NAME}" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt" "$INSTALL_DIR/"
-    
-    # 关键：设置二进制权限
-    if (( SERVER_PORT < 1024 )); then
-        sudo setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/${BIN_NAME}"
+    if ! id "$USER_NAME" &>/dev/null; then
+        sudo useradd --system --no-create-home --shell /usr/sbin/nologin "$USER_NAME"
     fi
 
-    # 关键：确保 hysteria2 用户有权进入该目录并读取文件
+    # 4. 使用 cp 避免跨分区问题（更安全）
+    log "正在将文件迁移至系统目录..."
+    sudo cp "${BIN_NAME}" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt" "$INSTALL_DIR/"
     sudo chown -R "$USER_NAME:$USER_NAME" "$INSTALL_DIR"
-    sudo chmod -R 750 "$INSTALL_DIR"  # 允许组/用户读取
+    sudo chmod 700 "$INSTALL_DIR"
 
-    # 写入 Service (去掉多余的 .service 后缀逻辑)
-    sudo tee "/etc/systemd/system/hysteria2.service" > /dev/null <<EOF
+    # 5. 为低端口授予能力（并验证）
+    if (( SERVER_PORT < 1024 )); then
+        log "检测到特权端口 $SERVER_PORT，正在授予 CAP_NET_BIND_SERVICE 能力..."
+        if ! sudo setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/${BIN_NAME}"; then
+            error "❌ setcap 失败！请检查 /etc 所在分区是否支持 extended attributes（非 noexec 挂载）"
+        fi
+        
+        # 验证能力是否生效
+        if ! getcap "$INSTALL_DIR/${BIN_NAME}" | grep -q "cap_net_bind_service"; then
+            error "❌ CAP_NET_BIND_SERVICE 未生效！部署中止。建议改用高位端口（如 29999）。"
+        fi
+        log "✅ 能力已成功授予"
+    fi
+
+    # 6. 生成 systemd 服务文件（带 .service 后缀！）
+    local SERVICE_FILE="${SERVICE_NAME}.service"
+    log "配置 systemd 服务: $SERVICE_FILE"
+    sudo tee "/etc/systemd/system/$SERVICE_FILE" > /dev/null <<EOF
 [Unit]
 Description=Hysteria2 Server
 After=network.target
@@ -173,21 +196,30 @@ After=network.target
 [Service]
 Type=simple
 User=${USER_NAME}
-Group=${USER_NAME}
 WorkingDirectory=${INSTALL_DIR}
 ExecStart=${INSTALL_DIR}/${BIN_NAME} server -c ${INSTALL_DIR}/${CONFIG_FILE}
 Restart=on-failure
+RestartSec=5s
+
 $( (( SERVER_PORT < 1024 )) && echo "AmbientCapabilities=CAP_NET_BIND_SERVICE" )
-# 调试用：如果还是失败，可以将下面这两行注释掉
+
 NoNewPrivileges=true
 ProtectSystem=full
+PrivateTmp=true
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_INET6
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
+    # 7. 启动服务
     sudo systemctl daemon-reload
-    sudo systemctl restart hysteria2.service
+    if sudo systemctl enable --now "$SERVICE_FILE"; then
+        success "✅ Systemd 服务 '$SERVICE_FILE' 已启动"
+    else
+        error "❌ 服务启动失败，请运行：sudo journalctl -u $SERVICE_FILE -n 30 --no-pager"
+    fi
 }
 setup_firewall() {
     log "配置防火墙端口: $SERVER_PORT"
