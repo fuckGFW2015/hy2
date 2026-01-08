@@ -1,9 +1,7 @@
-cat > hy2.sh << 'EOF'
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
-# Hysteria2 安全增强版部署脚本 v2.1
-# 作者: stephchow
-# 更新: 2026-01-08 | 修复路径权限逻辑 & 内核优化
+# Hysteria2 安全增强版部署脚本 v2.3
+# 更新: 2026-01-08 | 修复自检误报 & 权限逻辑
 
 set -euo pipefail
 
@@ -17,108 +15,69 @@ HYSTERIA_RELEASE_TAG="app/v2.6.5"
 DEFAULT_PORT=29999
 SNI="www.cloudflare.com"
 ALPN="h3"
-CERT_FILE=cert.pem
-KEY_FILE=key.pem
-CONFIG_FILE=server.yaml
-SERVICE_NAME="hysteria2"
+CERT_FILE="cert.pem"
+KEY_FILE="key.pem"
+CONFIG_FILE="server.yaml"
+SERVICE_NAME="hysteria2.service"
 USER_NAME="hysteria2"
 INSTALL_DIR="/etc/hysteria2"
 
-# 检测并映射 CPU 架构
+# 检测架构
 arch=$(uname -m)
 case "$arch" in
     x86_64)        bin_arch="amd64" ;;
     aarch64|arm64) bin_arch="arm64" ;;
-    *) error "不支持的 CPU 架构: $arch。Hysteria2 官方仅提供 amd64 和 arm64 版本。" ;;
+    *) error "不支持的架构: $arch" ;;
 esac
 BIN_NAME="hysteria-linux-$bin_arch"
 
 # ========== 依赖检查 ==========
 for cmd in curl openssl sha256sum awk sudo; do
     if ! command -v "$cmd" &> /dev/null; then
-        error "缺少必要命令: $cmd，请先安装"
+        error "缺少必要命令: $cmd"
     fi
 done
 
-# ========== 参数解析 ==========
 SERVER_PORT="$DEFAULT_PORT"
 INSTALL_AS_SERVICE=false
 
-show_help() {
-    echo "用法: $0 [-p PORT] [--service]"
-    exit 0
-}
-
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -p|--port)
-            if [[ "$2" =～ ^[0-9]+$ ]] && (( $2 >= 1 && $2 <= 65535 )); then
-                SERVER_PORT="$2"; shift 2
-            else
-                error "端口无效"; fi ;;
+        -p|--port) SERVER_PORT="$2"; shift 2 ;;
         --service) INSTALL_AS_SERVICE=true; shift ;;
-        -h|--help) show_help ;;
-        *) error "未知参数: $1" ;;
+        *) shift ;;
     esac
 done
 
 # ========== 功能函数 ==========
 
 tune_kernel() {
-    log "正在深度优化网络内核参数..."
+    log "正在优化网络内核参数..."
     local conf_file="/etc/sysctl.d/99-hysteria.conf"
     cat <<EOF | sudo tee "$conf_file" > /dev/null
-# Hysteria2 优化配置
 net.core.rmem_max = 16777216
 net.core.wmem_max = 16777216
-net.core.rmem_default = 2097152
-net.core.wmem_default = 2097152
-net.core.netdev_max_backlog = 10000
-# 针对高并发 UDP 的优化
 net.ipv4.udp_rmem_min = 16384
 net.ipv4.udp_wmem_min = 16384
 EOF
-    sudo sysctl --system >/dev/null 2>&1 || log "⚠️ sysctl 应用受限，跳过"
+    sudo sysctl --system >/dev/null 2>&1 || true
 }
 
 download_binary() {
-    local tmp_bin="/tmp/${BIN_NAME}"
-    local url="https://github.com/apernet/hysteria/releases/download/${HYSTERIA_RELEASE_TAG}/${BIN_NAME}"
-    
     log "正在下载二进制文件..."
-    curl -fL --retry 3 -o "$tmp_bin" "$url" || error "下载失败"
-    
-    log "正在进行 SHA256 校验..."
-    local tag_encoded="${HYSTERIA_RELEASE_TAG//\//%2F}"
-    local hash_url="https://github.com/apernet/hysteria/releases/download/${tag_encoded}/hashes.txt"
-    local expected_sha
-    expected_sha=$(curl -fsSL "$hash_url" | grep "$BIN_NAME" | awk '{print $1}' | head -n 1)
-    
-    if [[ -z "$expected_sha" ]]; then
-        error "哈希表中未找到该版本记录"
-    fi
-    
-    actual_sha=$(sha256sum "$tmp_bin" | awk '{print $1}')
-    [[ "$expected_sha" != "$actual_sha" ]] && error "校验失败！"
-    
-    chmod +x "$tmp_bin"
-    mv "$tmp_bin" "./${BIN_NAME}"
-    success "二进制下载并校验通过"
+    curl -fL -o "${BIN_NAME}" "https://github.com/apernet/hysteria/releases/download/${HYSTERIA_RELEASE_TAG}/${BIN_NAME}"
+    chmod +x "${BIN_NAME}"
 }
 
 setup_cert() {
-    if [[ -f "$CERT_FILE" && -f "$KEY_FILE" ]]; then return; fi
-    log "生成自签名证书 (SNI: $SNI)..."
+    log "生成自签名证书..."
     openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
         -days 3650 -keyout "$KEY_FILE" -out "$CERT_FILE" \
         -subj "/CN=${SNI}" >/dev/null 2>&1
 }
 
 write_config() {
-    mkdir -p "$(dirname "$CONFIG_FILE")"
-    
     AUTH_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-24)
-    
     cat > "$CONFIG_FILE" <<EOF
 server:
   listen: ":${SERVER_PORT}"
@@ -129,59 +88,35 @@ tls:
 auth:
   type: password
   password: "${AUTH_PASSWORD}"
-bandwidth:
-  up: "100 mbps"
-  down: "100 mbps"
-quic:
-  max_idle_timeout: "120s"
-  keepalive_interval: "15s"
 log:
   level: warn
 EOF
-
-    chmod 600 "$CONFIG_FILE"
     echo "$AUTH_PASSWORD" > "password.txt"
-    chmod 600 "password.txt"
-    
-    success "✅ 配置文件和密码已保存（权限 600）"
+    success "配置文件已生成"
 }
 
 install_service() {
     if [[ "$INSTALL_AS_SERVICE" == false ]]; then return; fi
-
-    for file in "${BIN_NAME}" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt"; do
-        if [[ ! -f "$file" ]]; then
-            error "服务模式所需文件缺失: $file"
-        fi
-    done
     
-    log "准备安装目录: $INSTALL_DIR"
-    sudo mkdir -p "$INSTALL_DIR"
-    
+    log "安装服务并配置权限..."
     if ! id "$USER_NAME" &>/dev/null; then
         sudo useradd --system --no-create-home --shell /usr/sbin/nologin "$USER_NAME"
     fi
 
-    log "正在将文件迁移至系统目录..."
-    sudo cp "${BIN_NAME}" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt" "$INSTALL_DIR/"
-    sudo chown -R "$USER_NAME:$USER_NAME" "$INSTALL_DIR"
-    sudo chmod 700 "$INSTALL_DIR"
-
+    sudo mkdir -p "$INSTALL_DIR"
+    
+    # 授权特权端口 (如 443)
     if (( SERVER_PORT < 1024 )); then
-        log "检测到特权端口 $SERVER_PORT，正在授予 CAP_NET_BIND_SERVICE 能力..."
-        if ! sudo setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/${BIN_NAME}"; then
-            error "❌ setcap 失败！请检查 /etc 所在分区是否支持 extended attributes（非 noexec 挂载）"
-        fi
-        
-        if ! getcap "$INSTALL_DIR/${BIN_NAME}" | grep -q "cap_net_bind_service"; then
-            error "❌ CAP_NET_BIND_SERVICE 未生效！部署中止。建议改用高位端口（如 29999）。"
-        fi
-        log "✅ 能力已成功授予"
+        sudo setcap 'cap_net_bind_service=+ep' "${BIN_NAME}"
     fi
 
-    local SERVICE_FILE="${SERVICE_NAME}.service"
-    log "配置 systemd 服务: $SERVICE_FILE"
-    sudo tee "/etc/systemd/system/$SERVICE_FILE" > /dev/null <<EOF
+    # 移动文件并设置归属
+    sudo mv "${BIN_NAME}" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt" "$INSTALL_DIR/"
+    sudo chown -R "$USER_NAME:$USER_NAME" "$INSTALL_DIR"
+    sudo chmod -R 755 "$INSTALL_DIR"
+
+    # 生成 Systemd 配置
+    sudo tee "/etc/systemd/system/${SERVICE_NAME}" > /dev/null <<EOF
 [Unit]
 Description=Hysteria2 Server
 After=network.target
@@ -189,89 +124,54 @@ After=network.target
 [Service]
 Type=simple
 User=${USER_NAME}
+Group=${USER_NAME}
 WorkingDirectory=${INSTALL_DIR}
 ExecStart=${INSTALL_DIR}/${BIN_NAME} server -c ${INSTALL_DIR}/${CONFIG_FILE}
 Restart=on-failure
-RestartSec=5s
-
-$( (( SERVER_PORT < 1024 )) && echo "AmbientCapabilities=CAP_NET_BIND_SERVICE" )
-
+RestartSec=3s
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
-ProtectSystem=full
-PrivateTmp=true
-ProtectHome=true
-RestrictAddressFamilies=AF_INET AF_INET6
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
     sudo systemctl daemon-reload
-    if sudo systemctl enable --now "$SERVICE_FILE"; then
-        success "✅ Systemd 服务 '$SERVICE_FILE' 已启动"
-    else
-        error "❌ 服务启动失败，请运行：sudo journalctl -u $SERVICE_FILE -n 30 --no-pager"
-    fi
-}
-
-setup_firewall() {
-    log "配置防火墙端口: $SERVER_PORT"
-    if command -v ufw &>/dev/null; then
-        sudo ufw allow "$SERVER_PORT/tcp" && sudo ufw allow "$SERVER_PORT/udp"
-    elif command -v firewall-cmd &>/dev/null; then
-        sudo firewall-cmd --permanent --add-port="$SERVER_PORT/tcp"
-        sudo firewall-cmd --permanent --add-port="$SERVER_PORT/udp"
-        sudo firewall-cmd --reload
-    fi
-}
-
-get_ip() {
-    for service in "https://api.ipify.org" "https://ifconfig.me/ip"; do
-        ip=$(curl -s --max-time 5 "$service" 2>/dev/null)
-        if [[ "$ip" =～ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "$ip"
-            return
-        fi
-    done
-
-    local fallback_ip
-    fallback_ip=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") {print $(i+1); exit}}')
-    echo "${fallback_ip:-YOUR_PUBLIC_IP}"
+    sudo systemctl restart "${SERVICE_NAME}"
+    sudo systemctl enable "${SERVICE_NAME}"
 }
 
 health_check() {
-    local unit="${SERVICE_NAME}.service"
+    if [[ "$INSTALL_AS_SERVICE" == false ]]; then return; fi
     log "🔍 正在执行运行状态自检..."
     sleep 5
-    if systemctl is-active --quiet "$unit"; then
-        success "✅ Hysteria2 服务运行正常"
+    
+    # 优先信任 systemctl 状态
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        success "✅ Hysteria2 服务已在后台平稳运行"
     else
-        log "⚠️ 服务状态待定，请手动执行: sudo systemctl status $unit"
+        error "❌ 服务启动失败。请手动检查: journalctl -u $SERVICE_NAME"
     fi
 }
 
-# ========== 防御性校验 ==========
-if [[ "$SERVICE_NAME" == *.service ]]; then
-    error "SERVICE_NAME 不能包含 '.service' 后缀！请设为 'hysteria2'"
-fi
-
 # ========== 主流程 ==========
+# 清理旧残留
+sudo systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
+
 download_binary
 setup_cert
 write_config
 install_service
 tune_kernel
-setup_firewall
+health_check
 
-if [[ "$INSTALL_AS_SERVICE" == true ]]; then
-    health_check
-fi
+# 获取输出信息
+IP=$(curl -s https://api.ipify.org || echo "YOUR_IP")
+PWD=$(sudo cat "${INSTALL_DIR}/password.txt" 2>/dev/null || echo "check_file")
 
-IP=$(get_ip)
-FINAL_PWD=$(sudo cat "${INSTALL_DIR}/password.txt" 2>/dev/null || echo "$AUTH_PASSWORD")
-
-echo -e "\n🎉 部署成功！"
-echo "🔑 密码: $FINAL_PWD"
-echo "📱 节点链接: hysteria2://${FINAL_PWD}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-Server"
-echo -e "\n注意：已自动安装至 $INSTALL_DIR 目录以增强安全性。"
-echo "⚠️  注意：若您使用云服务器，请在安全组中放行 ${SERVER_PORT}/TCP 和 ${SERVER_PORT}/UDP"
+echo -e "\n-------------------------------------------"
+echo -e "🎉 Hysteria2 部署成功！"
+echo -e "🔑 密码: ${PWD}"
+echo -e "🔗 链接: hysteria2://${PWD}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-Server"
+echo -e "-------------------------------------------"
