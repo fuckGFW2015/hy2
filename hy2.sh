@@ -249,13 +249,15 @@ get_ip() {
 }
 
 health_check() {
++   local unit="${SERVICE_NAME}.service"
     log "🔍 正在执行运行状态自检..."
-    sleep 5 # 多等两秒
-    # 只要 Systemd 没报销，就认为成功
-    if systemctl is-active --quiet "$SERVICE_NAME"; then
+    sleep 5
+-   if systemctl is-active --quiet "$SERVICE_NAME"; then
++   if systemctl is-active --quiet "$unit"; then
         success "✅ Hysteria2 服务运行正常"
     else
-        log "⚠️ 服务状态待定，请手动执行: sudo systemctl status $SERVICE_NAME"
+-       log "⚠️ 服务状态待定，请手动执行: sudo systemctl status $SERVICE_NAME"
++       log "⚠️ 服务状态待定，请手动执行: sudo systemctl status $unit"
     fi
 }
 
@@ -264,13 +266,6 @@ if [[ "$SERVICE_NAME" == *.service ]]; then
     error "SERVICE_NAME 不能包含 '.service' 后缀！请设为 'hysteria2'"
 fi
 
-# ========== 主流程 ==========
-download_binary
-setup_cert
-write_config
-install_service
-tune_kernel
-setup_firewall
 # ========== 主流程 ==========
 download_binary
 setup_cert
