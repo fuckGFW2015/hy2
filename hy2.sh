@@ -14,7 +14,7 @@ success() { log "✅ SUCCESS: $*"; }
 
 # ========== 基础配置 ==========
 HYSTERIA_RELEASE_TAG="app/v2.6.5"
-DEFAULT_PORT=29999
+DEFAULT_PORT=443
 SNI="www.cloudflare.com"
 ALPN="h3"
 CERT_FILE="cert.pem"
