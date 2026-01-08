@@ -52,10 +52,10 @@ sudo dnf install -y curl openssl coreutils gawk
 
 ```
 
-curl -fsSL -o hy2.sh https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/heads/main/hy2.sh && chmod +x hy2.sh && ./hy2.sh -p 29999 --service
+curl -fsSL -o hy2.sh https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/heads/main/hy2.sh && chmod +x hy2.sh && ./hy2.sh --service
 
 ```
-## 默认端口29999，自定义的话，在-p后面加上你的服务器端口。比如./hy2.sh -p 3183 --service
+## 默认端口443（已最完美，不建议自定义）
 
 ## 5.一键开启 BBR加速（要求 Linux 内核 ≥ 4.9）
 BBR 要求：
