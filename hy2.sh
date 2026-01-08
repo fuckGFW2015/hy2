@@ -19,7 +19,7 @@ ALPN="h3"
 CERT_FILE=cert.pem
 KEY_FILE=key.pem
 CONFIG_FILE=server.yaml
-SERVICE_NAME="hysteria2.service"
+SERVICE_NAME="hysteria2"
 USER_NAME="hysteria2"
 # 固定的安装目录，解决 root 权限死锁
 INSTALL_DIR="/etc/hysteria2"
