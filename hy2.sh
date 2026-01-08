@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
-# Hysteria2 安全增强部署脚本 v2.8
-# 更新: 2026-01-09 | 增加 SHA256 校验 & QUIC 超时优化
+# Hysteria2 安全增强部署脚本 v2.9.1
+# 更新: 2026-01-08 | 修复: 特权端口授权 & 增加安全组放行提示
 
 set -euo pipefail
 
@@ -72,15 +72,13 @@ download_binary() {
     local expected_sha
     expected_sha=$(curl -fsSL "$hash_url" | grep "$BIN_NAME" | awk '{print $1}' | head -n 1)
     
-    if [ -z "$expected_sha" ]; then
-        warn "哈希表中未找到记录，跳过校验"
-    else
+    if [ -n "$expected_sha" ]; then
         local actual_sha
         actual_sha=$(sha256sum "$bin_path" | awk '{print $1}')
         if [ "$actual_sha" = "$expected_sha" ]; then
             success "SHA256 校验通过"
         else
-            error "SHA256 校验失败！文件可能损坏"
+            error "SHA256 校验失败"
         fi
     fi
 
@@ -114,8 +112,8 @@ auth:
   type: password
   password: "${pwd_str}"
 quic:
-  max_idle_timeout: "120s"
-  keepalive_interval: "15s"
+  max_idle_timeout: 120s
+  keepalive_interval: 15s
 log:
   level: warn
 EOF
@@ -125,26 +123,34 @@ EOF
 
 install_service() {
     if [ "$INSTALL_AS_SERVICE" = false ]; then return; fi
-    log "安装 systemd 服务..."
+
+    log "安装 systemd 服务并处理特权端口权限..."
     if ! id "$USER_NAME" >/dev/null 2>&1; then
         sudo useradd --system --no-create-home --shell /usr/sbin/nologin "$USER_NAME"
     fi
+
     sudo mkdir -p "$INSTALL_DIR"
+
+    # 1. 先复制文件
     sudo cp "$BIN_PATH" "$INSTALL_DIR/${BIN_NAME}"
     sudo cp "$CERT_DIR/$CERT_FILE" "$INSTALL_DIR/"
     sudo cp "$CERT_DIR/$KEY_FILE" "$INSTALL_DIR/"
     sudo cp "$CONF_DIR/$CONFIG_FILE" "$INSTALL_DIR/"
     sudo cp "$CONF_DIR/password.txt" "$INSTALL_DIR/"
 
+    # 2. 赋予 Capability (必须在 cp 之后执行)
     if [ "$SERVER_PORT" -lt 1024 ]; then
+        log "检测到特权端口 ${SERVER_PORT}，正在执行 setcap..."
         sudo setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/${BIN_NAME}"
     fi
 
+    # 3. 设置权限
     sudo chown -R "$USER_NAME:$USER_NAME" "$INSTALL_DIR"
     sudo chmod 755 "$INSTALL_DIR"
     sudo chmod 600 "$INSTALL_DIR"/*.pem "$INSTALL_DIR"/*.txt "$INSTALL_DIR"/*.yaml
     sudo chmod +x "$INSTALL_DIR/${BIN_NAME}"
 
+    # 4. 生成 systemd 配置
     sudo tee "/etc/systemd/system/${SERVICE_NAME}.service" > /dev/null <<EOF
 [Unit]
 Description=Hysteria2 Server
@@ -158,13 +164,15 @@ WorkingDirectory=${INSTALL_DIR}
 ExecStart=${INSTALL_DIR}/${BIN_NAME} server -c ${INSTALL_DIR}/${CONFIG_FILE}
 Restart=on-failure
 RestartSec=3s
-$( [ "$SERVER_PORT" -lt 1024 ] && echo "AmbientCapabilities=CAP_NET_BIND_SERVICE" )
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
 ProtectSystem=full
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
     sudo systemctl daemon-reload
     sudo systemctl enable "${SERVICE_NAME}.service" --quiet
     sudo systemctl restart "${SERVICE_NAME}.service"
@@ -189,7 +197,7 @@ health_check() {
     if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
         success "✅ Hysteria2 服务已在后台平稳运行"
     else
-        error "服务启动异常，请检查: sudo journalctl -u ${SERVICE_NAME}.service -n 20"
+        error "服务异常。报错日志如下：\n$(sudo journalctl -u ${SERVICE_NAME}.service -n 5 --no-pager)"
     fi
 }
 
@@ -204,6 +212,7 @@ CERT_DIR=$(setup_cert)
 CONF_DIR=$(write_config)
 
 sudo systemctl stop "${SERVICE_NAME}.service" 2>/dev/null || true
+
 install_service
 tune_kernel
 health_check
@@ -216,5 +225,6 @@ echo -e "🎉 Hysteria2 部署成功！"
 echo -e "🔑 密码: ${FINAL_PWD}"
 echo -e "🔗 链接: hysteria2://${FINAL_PWD}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-Server"
 echo -e "-------------------------------------------"
-echo -e "\n⚠️  注意：已加入 QUIC 超时优化 (120s/15s)。"
-echo -e "请务必在安全组中开放 ${SERVER_PORT}/TCP 和 ${SERVER_PORT}/UDP。"
+echo -e "\n⚠️  重要提示："
+echo -e "   1. 请在云服务器控制台放行 ${SERVER_PORT}/TCP 和 ${SERVER_PORT}/UDP"
+echo -e "   2. 客户端连接请务必开启 '允许不安全证书 (Insecure)'"
