@@ -218,45 +218,13 @@ get_ip() {
 
 health_check() {
     log "🔍 正在执行运行状态自检..."
-    
-    # 1. 基础等待
     sleep 3
-
-    if [[ "$INSTALL_AS_SERVICE" == true ]]; then
-        # 如果服务没运行，尝试启动一次
-        if ! systemctl is-active --quiet "$SERVICE_NAME"; then
-            log "⚠️ 服务未处于活跃状态，尝试启动..."
-            sudo systemctl start "$SERVICE_NAME"
-            sleep 3
-        fi
-    fi
-
-    # 2. 端口检测循环
-    local max_retries=5
-    local count=0
-    while [ $count -lt $max_retries ]; do
-        local port_found=0
-        # 同时检测 TCP 和 UDP 监听
-        if ss -tuln | grep -q ":${SERVER_PORT}"; then
-            port_found=1
-        fi
-
-        if [[ $port_found -eq 1 ]]; then
-            success "✅ Hysteria2 正在监听端口 ${SERVER_PORT}"
-            return 0
-        fi
-        
-        count=$((count + 1))
-        log "⏳ 等待端口 ${SERVER_PORT} 就绪 ($count/$max_retries)..."
-        sleep 2
-    done
-
-    # 3. 最终判定：即使端口没搜到，如果 systemctl 显示活跃，也视为成功
+    
+    # 只要 Systemd 显示活跃，即认为成功（解决某些环境 ss 检测不到 UDP 的问题）
     if systemctl is-active --quiet "$SERVICE_NAME"; then
-        success "✅ 服务已启动 (Systemd: Active)。注意：若无法连接请检查云端安全组。"
-        return 0
+        success "✅ Hysteria2 服务已启动并运行"
     else
-        error "❌ 端口 ${SERVER_PORT} 自检失败。请运行 'sudo journalctl -u $SERVICE_NAME' 查看原因。"
+        error "❌ 服务未能启动，请查看日志: sudo journalctl -u $SERVICE_NAME"
     fi
 }
 
