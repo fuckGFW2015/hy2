@@ -24,7 +24,14 @@ USER_NAME="hysteria2"
 # 固定的安装目录，解决 root 权限死锁
 INSTALL_DIR="/etc/hysteria2"
 
-BIN_NAME="hysteria-linux-$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')"
+# 检测并映射 CPU 架构
+arch=$(uname -m)
+case "$arch" in
+    x86_64)        bin_arch="amd64" ;;
+    aarch64|arm64) bin_arch="arm64" ;;
+    *) error "不支持的 CPU 架构: $arch。Hysteria2 官方仅提供 amd64 和 arm64 版本。" ;;
+esac
+BIN_NAME="hysteria-linux-$bin_arch"
 
 # ========== 依赖检查 ==========
 for cmd in curl openssl sha256sum awk sudo; do
@@ -257,3 +264,4 @@ echo -e "\n🎉 部署成功！"
 echo "🔑 密码: $FINAL_PWD"
 echo "📱 节点链接: hysteria2://${FINAL_PWD}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-Server"
 echo -e "\n注意：已自动安装至 $INSTALL_DIR 目录以增强安全性。"
+echo "⚠️  注意：若您使用云服务器，请在安全组中放行 ${SERVER_PORT}/TCP 和 ${SERVER_PORT}/UDP"
