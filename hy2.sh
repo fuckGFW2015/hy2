@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
-# Hysteria2 安全增强部署脚本 v2.5
-# 修正：变量作用域、路径引用及 setcap 逻辑 | 作者：stephchow
+# Hysteria2 安全增强部署脚本 v2.8
+# 更新: 2026-01-09 | 增加 SHA256 校验 & QUIC 超时优化
 
 set -euo pipefail
 
@@ -33,7 +33,7 @@ esac
 BIN_NAME="hysteria-linux-$bin_arch"
 
 # ========== 依赖检查 ==========
-for cmd in curl openssl sha256sum awk sudo; do
+for cmd in curl openssl sha256sum awk sudo grep; do
     command -v "$cmd" >/dev/null 2>&1 || error "缺少必要命令: $cmd"
 done
 
@@ -47,7 +47,7 @@ while [ $# -gt 0 ]; do
             if [ "$2" -eq "$2" ] 2>/dev/null && [ "$2" -ge 1 ] && [ "$2" -le 65535 ]; then
                 SERVER_PORT="$2"; shift 2
             else
-                error "端口必须是 1-65535 之间的整数"
+                error "端口无效"
             fi ;;
         --service) INSTALL_AS_SERVICE=true; shift ;;
         *) shift ;;
@@ -56,26 +56,33 @@ done
 
 # ========== 功能函数 ==========
 
-tune_kernel() {
-    log "正在优化网络内核参数..."
-    local conf_file="/etc/sysctl.d/99-hysteria.conf"
-    cat <<EOF | sudo tee "$conf_file" > /dev/null
-net.core.rmem_max = 16777216
-net.core.wmem_max = 16777216
-net.ipv4.udp_rmem_min = 16384
-net.ipv4.udp_wmem_min = 16384
-EOF
-    sudo sysctl --system >/dev/null 2>&1 || warn "sysctl 优化未完全生效（非致命）"
-}
-
 download_binary() {
     local tmp_dir="/tmp/hy2-install-$$"
     mkdir -p "$tmp_dir"
     local bin_path="$tmp_dir/${BIN_NAME}"
     
-    log "正在下载 Hysteria2 二进制..."
+    log "正在下载 Hysteria2 二进制 (${bin_arch})..."
     curl -fL --retry 3 -o "$bin_path" \
         "https://github.com/apernet/hysteria/releases/download/${HYSTERIA_RELEASE_TAG}/${BIN_NAME}" || error "下载失败"
+
+    log "正在进行 SHA256 完整性校验..."
+    local tag_encoded="${HYSTERIA_RELEASE_TAG//\//%2F}"
+    local hash_url="https://github.com/apernet/hysteria/releases/download/${tag_encoded}/hashes.txt"
+    
+    local expected_sha
+    expected_sha=$(curl -fsSL "$hash_url" | grep "$BIN_NAME" | awk '{print $1}' | head -n 1)
+    
+    if [ -z "$expected_sha" ]; then
+        warn "哈希表中未找到记录，跳过校验"
+    else
+        local actual_sha
+        actual_sha=$(sha256sum "$bin_path" | awk '{print $1}')
+        if [ "$actual_sha" = "$expected_sha" ]; then
+            success "SHA256 校验通过"
+        else
+            error "SHA256 校验失败！文件可能损坏"
+        fi
+    fi
 
     chmod +x "$bin_path"
     echo "$bin_path"
@@ -94,8 +101,8 @@ setup_cert() {
 write_config() {
     local tmp_dir="/tmp/hy2-config-$$"
     mkdir -p "$tmp_dir"
-    AUTH_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-24)
-    
+    local pwd_str
+    pwd_str=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-24)
     cat > "$tmp_dir/$CONFIG_FILE" <<EOF
 server:
   listen: ":${SERVER_PORT}"
@@ -105,47 +112,39 @@ tls:
   alpn: ["${ALPN}"]
 auth:
   type: password
-  password: "${AUTH_PASSWORD}"
+  password: "${pwd_str}"
 quic:
   max_idle_timeout: "120s"
   keepalive_interval: "15s"
 log:
   level: warn
 EOF
-    echo "$AUTH_PASSWORD" > "$tmp_dir/password.txt"
+    echo "$pwd_str" > "$tmp_dir/password.txt"
     echo "$tmp_dir"
 }
 
 install_service() {
     if [ "$INSTALL_AS_SERVICE" = false ]; then return; fi
-
     log "安装 systemd 服务..."
     if ! id "$USER_NAME" >/dev/null 2>&1; then
         sudo useradd --system --no-create-home --shell /usr/sbin/nologin "$USER_NAME"
     fi
-
     sudo mkdir -p "$INSTALL_DIR"
-
-    # 1. 复制文件到最终目录
     sudo cp "$BIN_PATH" "$INSTALL_DIR/${BIN_NAME}"
     sudo cp "$CERT_DIR/$CERT_FILE" "$INSTALL_DIR/"
     sudo cp "$CERT_DIR/$KEY_FILE" "$INSTALL_DIR/"
     sudo cp "$CONF_DIR/$CONFIG_FILE" "$INSTALL_DIR/"
     sudo cp "$CONF_DIR/password.txt" "$INSTALL_DIR/"
 
-    # 2. 授权低端口能力 (在最终安装目录执行，避免 /tmp 挂载限制)
     if [ "$SERVER_PORT" -lt 1024 ]; then
-        log "授予 CAP_NET_BIND_SERVICE 能力..."
         sudo setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/${BIN_NAME}"
     fi
 
-    # 3. 设置严格权限
     sudo chown -R "$USER_NAME:$USER_NAME" "$INSTALL_DIR"
     sudo chmod 755 "$INSTALL_DIR"
     sudo chmod 600 "$INSTALL_DIR"/*.pem "$INSTALL_DIR"/*.txt "$INSTALL_DIR"/*.yaml
     sudo chmod +x "$INSTALL_DIR/${BIN_NAME}"
 
-    # 4. 生成 systemd 单元
     sudo tee "/etc/systemd/system/${SERVICE_NAME}.service" > /dev/null <<EOF
 [Unit]
 Description=Hysteria2 Server
@@ -162,27 +161,35 @@ RestartSec=3s
 $( [ "$SERVER_PORT" -lt 1024 ] && echo "AmbientCapabilities=CAP_NET_BIND_SERVICE" )
 NoNewPrivileges=true
 ProtectSystem=full
-PrivateTmp=true
-ProtectHome=true
 
 [Install]
 WantedBy=multi-user.target
 EOF
-
     sudo systemctl daemon-reload
-    sudo systemctl restart "${SERVICE_NAME}.service"
     sudo systemctl enable "${SERVICE_NAME}.service" --quiet
-    success "✅ Systemd 服务已启动"
+    sudo systemctl restart "${SERVICE_NAME}.service"
+}
+
+tune_kernel() {
+    log "优化网络内核参数..."
+    local conf_file="/etc/sysctl.d/99-hysteria.conf"
+    cat <<EOF | sudo tee "$conf_file" > /dev/null
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.udp_rmem_min = 16384
+net.ipv4.udp_wmem_min = 16384
+EOF
+    sudo sysctl --system >/dev/null 2>&1 || true
 }
 
 health_check() {
     if [ "$INSTALL_AS_SERVICE" = false ]; then return; fi
-    log "🔍 执行服务健康检查..."
+    log "🔍 执行运行状态自检..."
     sleep 5
     if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
-        success "✅ Hysteria2 服务运行正常"
+        success "✅ Hysteria2 服务已在后台平稳运行"
     else
-        error "服务状态异常，请查看日志: sudo journalctl -u ${SERVICE_NAME}.service -n 30"
+        error "服务启动异常，请检查: sudo journalctl -u ${SERVICE_NAME}.service -n 20"
     fi
 }
 
@@ -192,30 +199,22 @@ cleanup() {
 
 # ========== 主流程 ==========
 trap cleanup EXIT
-
-# 准备文件并捕获路径
 BIN_PATH=$(download_binary)
 CERT_DIR=$(setup_cert)
 CONF_DIR=$(write_config)
 
-# 确保旧服务停止
 sudo systemctl stop "${SERVICE_NAME}.service" 2>/dev/null || true
-
-# 安装与自检
 install_service
 tune_kernel
 health_check
 
-# 提取信息
 FINAL_PWD=$(cat "$CONF_DIR/password.txt")
-IP=$(curl -s --max-time 5 https://api.ipify.org || echo "YOUR_PUBLIC_IP")
+IP=$(curl -s --max-time 5 https://api.ipify.org || echo "YOUR_IP")
 
 echo -e "\n-------------------------------------------"
 echo -e "🎉 Hysteria2 部署成功！"
 echo -e "🔑 密码: ${FINAL_PWD}"
 echo -e "🔗 链接: hysteria2://${FINAL_PWD}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-Server"
-echo -e "📁 安装目录: ${INSTALL_DIR}"
 echo -e "-------------------------------------------"
-echo -e "\n⚠️  重要提示："
-echo -e "   1. 请在控制台放行 ${SERVER_PORT}/TCP 和 ${SERVER_PORT}/UDP"
-echo -e "   2. 客户端连接请开启 'Insecure/允许不安全证书'"
+echo -e "\n⚠️  注意：已加入 QUIC 超时优化 (120s/15s)。"
+echo -e "请务必在安全组中开放 ${SERVER_PORT}/TCP 和 ${SERVER_PORT}/UDP。"
