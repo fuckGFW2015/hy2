@@ -220,53 +220,44 @@ get_ip() {
 
 health_check() {
     log "🔍 正在执行运行状态自检 (等待服务就绪)..."
-
-    # 1. 给服务一点启动时间
-    sleep 2
+    
+    # 1. 给服务一点启动时间，避免瞬时检测失败
+    sleep 3
 
     if [[ "$INSTALL_AS_SERVICE" == true ]]; then
-        # 使用 timeout 防止 systemctl 卡死（关键！）
-        if ! timeout 5s sudo systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-            log "⚠️ 服务未就绪或状态检查超时，尝试重启..."
+        if ! sudo systemctl is-active --quiet "$SERVICE_NAME"; then
+            log "⚠️ 服务启动稍慢，尝试重启..."
             sudo systemctl restart "$SERVICE_NAME"
-            sleep 3  # 给重启后更多时间
+            sleep 2
         fi
     fi
 
-    # 2. 重试检测端口监听（最多 5 次）
+    # 2. 增加重试循环，检测端口是否监听
     local max_retries=5
     local count=0
     local tcp_listening=0
     local udp_listening=0
 
-    while (( count < max_retries )); do
-        tcp_listening=0
-        udp_listening=0
-
+    while [ $count -lt $max_retries ]; do
         if command -v ss >/dev/null; then
-            tcp_listening=$(ss -tuln 2>/dev/null | grep -c ":${SERVER_PORT}.*LISTEN") || true
-            udp_listening=$(ss -uln 2>/dev/null | grep -c ":${SERVER_PORT}.*UNCONN") || true
-        elif command -v netstat >/dev/null; then
-            tcp_listening=$(netstat -tuln 2>/dev/null | grep -c ":${SERVER_PORT}.*LISTEN") || true
-            udp_listening=$(netstat -uln 2>/dev/null | grep -c ":${SERVER_PORT} ") || true
+            tcp_listening=$(ss -tuln | grep -c ":${SERVER_PORT}.*LISTEN") || true
+            udp_listening=$(ss -uln | grep -c ":${SERVER_PORT}.*UNCONN") || true
         else
-            log "⚠️ 无法检测端口（缺少 ss/netstat），跳过自检"
-            return 0
+            tcp_listening=$(netstat -tuln | grep -c ":${SERVER_PORT}.*LISTEN") || true
+            udp_listening=$(netstat -uln | grep -c ":${SERVER_PORT} ") || true
         fi
 
         if (( tcp_listening > 0 && udp_listening > 0 )); then
-            success "✅ Hysteria2 正在监听 TCP/UDP 端口 ${SERVER_PORT}"
+            success "✅ Hysteria2 正在监听端口 ${SERVER_PORT}"
             return 0
         fi
-
-        ((count++))
-        if (( count < max_retries )); then
-            log "⏳ 端口尚未就绪，等待中 ($count/$max_retries)..."
-            sleep 2
-        fi
+        
+        count=$((count + 1))
+        log "⏳ 端口尚未就绪，等待中 ($count/$max_retries)..."
+        sleep 2
     done
 
-    error "❌ 端口 ${SERVER_PORT} 自检失败（TCP: $tcp_listening, UDP: $udp_listening）。请运行 'sudo journalctl -u $SERVICE_NAME' 查看具体错误。"
+    error "❌ 端口 ${SERVER_PORT} 自检失败。请运行 'sudo journalctl -u $SERVICE_NAME' 查看具体错误。"
 }
 
 # ========== 主流程 ==========
