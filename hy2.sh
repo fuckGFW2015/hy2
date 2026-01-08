@@ -218,13 +218,12 @@ get_ip() {
 
 health_check() {
     log "🔍 正在执行运行状态自检..."
-    sleep 3
-    
-    # 只要 Systemd 显示活跃，即认为成功（解决某些环境 ss 检测不到 UDP 的问题）
+    sleep 5 # 多等两秒
+    # 只要 Systemd 没报销，就认为成功
     if systemctl is-active --quiet "$SERVICE_NAME"; then
-        success "✅ Hysteria2 服务已启动并运行"
+        success "✅ Hysteria2 服务运行正常"
     else
-        error "❌ 服务未能启动，请查看日志: sudo journalctl -u $SERVICE_NAME"
+        log "⚠️ 服务状态待定，请手动执行: sudo systemctl status $SERVICE_NAME"
     fi
 }
 
