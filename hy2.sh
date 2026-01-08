@@ -16,9 +16,9 @@ HYSTERIA_RELEASE_TAG="app/v2.6.5"
 DEFAULT_PORT=29999
 SNI="www.cloudflare.com"
 ALPN="h3"
-CERT_FILE="cert.pem"
-KEY_FILE="key.pem"
-CONFIG_FILE="server.yaml"
+CERT_FILE=cert.pem
+KEY_FILE=key.pem
+CONFIG_FILE=server.yaml
 SERVICE_NAME="hysteria2.service"
 USER_NAME="hysteria2"
 # 固定的安装目录，解决 root 权限死锁
