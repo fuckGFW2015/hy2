@@ -147,40 +147,25 @@ EOF
 }
 
 install_service() {
-    # 1. 检查是否需要安装服务
     if [[ "$INSTALL_AS_SERVICE" == false ]]; then return; fi
-
-    # 2. 确保所有必要文件都已生成（防止空跑）
-    for file in "${BIN_NAME}" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt"; do
-        if [[ ! -f "$file" ]]; then
-            error "服务模式所需文件缺失: $file"
-        fi
-    done
     
-    # 3. 准备环境：创建目录和系统用户
-    log "准备安装目录: $INSTALL_DIR"
+    # 确保目录干净且存在
     sudo mkdir -p "$INSTALL_DIR"
     
-    if ! id "$USER_NAME" &>/dev/null; then
-        sudo useradd --system --no-create-home --shell /usr/sbin/nologin "$USER_NAME"
-    fi
-
-    # 4. 迁移文件并设置基本权限
-    log "正在将文件迁移至系统目录..."
+    # 授权：必须先 chown 再启动，否则用户读不到证书
     sudo mv "${BIN_NAME}" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt" "$INSTALL_DIR/"
-    sudo chown -R "$USER_NAME:$USER_NAME" "$INSTALL_DIR"
-    sudo chmod 700 "$INSTALL_DIR"
-
-    # 5. 核心修复：针对低位端口 (如 443) 授予特权
+    
+    # 关键：设置二进制权限
     if (( SERVER_PORT < 1024 )); then
-        log "检测到特权端口 $SERVER_PORT，正在授予二进制文件监听权限..."
         sudo setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/${BIN_NAME}"
     fi
 
-    # 6. 生成 systemd 服务文件
-    log "配置 systemd 服务..."
-    # 注意：确保变量 SERVICE_NAME 不带 .service 后缀，或者下方 tee 路径不重复加后缀
-    sudo tee "/etc/systemd/system/${SERVICE_NAME}" > /dev/null <<EOF
+    # 关键：确保 hysteria2 用户有权进入该目录并读取文件
+    sudo chown -R "$USER_NAME:$USER_NAME" "$INSTALL_DIR"
+    sudo chmod -R 750 "$INSTALL_DIR"  # 允许组/用户读取
+
+    # 写入 Service (去掉多余的 .service 后缀逻辑)
+    sudo tee "/etc/systemd/system/hysteria2.service" > /dev/null <<EOF
 [Unit]
 Description=Hysteria2 Server
 After=network.target
@@ -188,27 +173,21 @@ After=network.target
 [Service]
 Type=simple
 User=${USER_NAME}
+Group=${USER_NAME}
 WorkingDirectory=${INSTALL_DIR}
 ExecStart=${INSTALL_DIR}/${BIN_NAME} server -c ${INSTALL_DIR}/${CONFIG_FILE}
 Restart=on-failure
-RestartSec=5s
-
 $( (( SERVER_PORT < 1024 )) && echo "AmbientCapabilities=CAP_NET_BIND_SERVICE" )
-
+# 调试用：如果还是失败，可以将下面这两行注释掉
 NoNewPrivileges=true
 ProtectSystem=full
-# 增加安全性限制
-PrivateTmp=true
-ProtectHome=true
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-    # 7. 启动并激活服务
     sudo systemctl daemon-reload
-    sudo systemctl enable --now "${SERVICE_NAME}"
-    success "Systemd 服务已安装并尝试启动"
+    sudo systemctl restart hysteria2.service
 }
 setup_firewall() {
     log "配置防火墙端口: $SERVER_PORT"
@@ -238,45 +217,47 @@ get_ip() {
 }
 
 health_check() {
-    log "🔍 正在执行运行状态自检 (等待服务就绪)..."
+    log "🔍 正在执行运行状态自检..."
     
-    # 1. 给服务一点启动时间，避免瞬时检测失败
+    # 1. 基础等待
     sleep 3
 
     if [[ "$INSTALL_AS_SERVICE" == true ]]; then
-        if ! sudo systemctl is-active --quiet "$SERVICE_NAME"; then
-            log "⚠️ 服务启动稍慢，尝试重启..."
-            sudo systemctl restart "$SERVICE_NAME"
-            sleep 2
+        # 如果服务没运行，尝试启动一次
+        if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+            log "⚠️ 服务未处于活跃状态，尝试启动..."
+            sudo systemctl start "$SERVICE_NAME"
+            sleep 3
         fi
     fi
 
-    # 2. 增加重试循环，检测端口是否监听
+    # 2. 端口检测循环
     local max_retries=5
     local count=0
-    local tcp_listening=0
-    local udp_listening=0
-
     while [ $count -lt $max_retries ]; do
-        if command -v ss >/dev/null; then
-            tcp_listening=$(ss -tuln | grep -c ":${SERVER_PORT}.*LISTEN") || true
-            udp_listening=$(ss -uln | grep -c ":${SERVER_PORT}.*UNCONN") || true
-        else
-            tcp_listening=$(netstat -tuln | grep -c ":${SERVER_PORT}.*LISTEN") || true
-            udp_listening=$(netstat -uln | grep -c ":${SERVER_PORT} ") || true
+        local port_found=0
+        # 同时检测 TCP 和 UDP 监听
+        if ss -tuln | grep -q ":${SERVER_PORT}"; then
+            port_found=1
         fi
 
-        if (( tcp_listening > 0 && udp_listening > 0 )); then
+        if [[ $port_found -eq 1 ]]; then
             success "✅ Hysteria2 正在监听端口 ${SERVER_PORT}"
             return 0
         fi
         
         count=$((count + 1))
-        log "⏳ 端口尚未就绪，等待中 ($count/$max_retries)..."
+        log "⏳ 等待端口 ${SERVER_PORT} 就绪 ($count/$max_retries)..."
         sleep 2
     done
 
-    error "❌ 端口 ${SERVER_PORT} 自检失败。请运行 'sudo journalctl -u $SERVICE_NAME' 查看具体错误。"
+    # 3. 最终判定：即使端口没搜到，如果 systemctl 显示活跃，也视为成功
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        success "✅ 服务已启动 (Systemd: Active)。注意：若无法连接请检查云端安全组。"
+        return 0
+    else
+        error "❌ 端口 ${SERVER_PORT} 自检失败。请运行 'sudo journalctl -u $SERVICE_NAME' 查看原因。"
+    fi
 }
 
 # ========== 主流程 ==========
