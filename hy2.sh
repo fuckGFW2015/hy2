@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
 # Hysteria2 安全增强部署脚本 v2.4 (兼容 POSIX)
-# 融合简洁性 + 健壮性 | 作者：社区协作
+# 融合简洁性 + 健壮性 | 作者：stephchow
 # 更新: 2026-01-09 | 移除 [[ =～ ]] 以兼容 dash/旧 shell
 
 set -euo pipefail
