@@ -197,7 +197,7 @@ get_ip() {
 
     # 最后回退到本地路由源 IP（在 RACKNERD 等直连公网 VPS 上即为公网 IP）
     local fallback_ip
-    fallback_ip=$(ip route get 8.8.8.8 2>/dev/null | awk '{print $7; exit}' | head -n1)
+    fallback_ip=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") {print $(i+1); exit}}')
     echo "${fallback_ip:-YOUR_PUBLIC_IP}"
 }
 
