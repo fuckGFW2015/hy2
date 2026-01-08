@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
-# Hysteria2 安全增强部署脚本 v3.0 (Final)
-# 作者：stephchow
-# 功能：SHA256校验 | 特权端口支持 | QUIC优化 | 多重IP获取 | 内核调优
+# Hysteria2 安全增强部署脚本 v3.1 (Final/Firewall-Fix)
+# 作者:stephchow
+# 更新: 2026-01-09 | 功能: SHA256校验 | 特权端口授权 | 自动修复防火墙冲突 | QUIC优化
 
 set -euo pipefail
 
@@ -34,7 +34,7 @@ esac
 BIN_NAME="hysteria-linux-$bin_arch"
 
 # ========== 依赖检查 ==========
-for cmd in curl openssl sha256sum awk sudo grep; do
+for cmd in curl openssl sha256sum awk sudo grep iptables; do
     command -v "$cmd" >/dev/null 2>&1 || error "缺少必要命令: $cmd"
 done
 
@@ -118,7 +118,7 @@ EOF
 
 install_service() {
     if [ "$INSTALL_AS_SERVICE" = false ]; then return; fi
-    log "安装 systemd 服务并处理权限..."
+    log "安装 systemd 服务并处理特权授权..."
     id "$USER_NAME" >/dev/null 2>&1 || sudo useradd --system --no-create-home --shell /usr/sbin/nologin "$USER_NAME"
     sudo mkdir -p "$INSTALL_DIR"
     sudo cp "$BIN_PATH" "$INSTALL_DIR/${BIN_NAME}"
@@ -158,6 +158,27 @@ EOF
     sudo systemctl restart "${SERVICE_NAME}.service"
 }
 
+fix_firewall_conflicts() {
+    log "⚙️ 正在修复防火墙冲突..."
+    # 1. IPTables 强制插队放行
+    if command -v iptables >/dev/null 2>&1; then
+        sudo iptables -I INPUT 1 -p udp --dport "${SERVER_PORT}" -j ACCEPT
+        sudo iptables -I INPUT 1 -p tcp --dport "${SERVER_PORT}" -j ACCEPT
+    fi
+    # 2. UFW 处理
+    if command -v ufw >/dev/null 2>&1 && sudo ufw status | grep -qw "active"; then
+        sudo ufw allow "${SERVER_PORT}/udp" >/dev/null
+        sudo ufw allow "${SERVER_PORT}/tcp" >/dev/null
+    fi
+    # 3. Firewalld 处理
+    if command -v firewall-cmd >/dev/null 2>&1 && sudo systemctl is-active --quiet firewalld; then
+        sudo firewall-cmd --permanent --add-port="${SERVER_PORT}/udp" >/dev/null 2>&1
+        sudo firewall-cmd --permanent --add-port="${SERVER_PORT}/tcp" >/dev/null 2>&1
+        sudo firewall-cmd --reload >/dev/null 2>&1
+    fi
+    success "防火墙策略已强行开放端口 ${SERVER_PORT}"
+}
+
 tune_kernel() {
     log "优化网络内核参数..."
     local conf_file="/etc/sysctl.d/99-hysteria.conf"
@@ -177,7 +198,7 @@ health_check() {
     if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
         success "✅ Hysteria2 服务已在后台平稳运行"
     else
-        error "服务异常。查看日志: sudo journalctl -u ${SERVICE_NAME}.service -n 10"
+        error "服务启动失败。日志摘要：\n$(sudo journalctl -u ${SERVICE_NAME}.service -n 5 --no-pager)"
     fi
 }
 
@@ -188,21 +209,23 @@ trap cleanup EXIT
 BIN_PATH=$(download_binary)
 CERT_DIR=$(setup_cert)
 CONF_DIR=$(write_config)
+
 sudo systemctl stop "${SERVICE_NAME}.service" 2>/dev/null || true
+
 install_service
+fix_firewall_conflicts
 tune_kernel
 health_check
 
 FINAL_PWD=$(cat "$CONF_DIR/password.txt")
 log "正在获取公网 IP..."
-IP=$(curl -s --max-time 3 https://api.ipify.org || curl -s --max-time 3 https://ifconfig.me/ip || curl -s --max-time 3 https://checkip.amazonaws.com || echo "YOUR_IP")
+IP=$(curl -s --max-time 3 https://api.ipify.org || curl -s --max-time 3 https://ifconfig.me/ip || echo "YOUR_IP")
 
 echo -e "\n-------------------------------------------"
 echo -e "🎉 Hysteria2 部署成功！"
 echo -e "🔑 密码: ${FINAL_PWD}"
 echo -e "🔗 链接: hysteria2://${FINAL_PWD}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-Server"
-echo -e "📁 路径: ${INSTALL_DIR}"
 echo -e "-------------------------------------------"
 echo -e "\n⚠️  重要提示："
-echo -e "   1. 请在云服务器控制台放行 ${SERVER_PORT}/TCP 和 ${SERVER_PORT}/UDP"
+echo -e "   1. 请确保云服务器控制台（安全组）已放行 ${SERVER_PORT}/UDP"
 echo -e "   2. 客户端连接请开启 '允许不安全证书 (Insecure)'"
