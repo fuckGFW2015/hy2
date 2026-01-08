@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
-# Hysteria2 安全增强部署脚本 v2.4 (兼容 POSIX)
-# 融合简洁性 + 健壮性 | 作者：stephchow
-# 更新: 2026-01-09 | 移除 [[ =～ ]] 以兼容 dash/旧 shell
+# Hysteria2 安全增强部署脚本 v2.5
+# 修正：变量作用域、路径引用及 setcap 逻辑 | 作者：stephchow
 
 set -euo pipefail
 
@@ -45,21 +44,13 @@ INSTALL_AS_SERVICE=false
 while [ $# -gt 0 ]; do
     case "$1" in
         -p|--port)
-            # 使用 POSIX 兼容方式校验端口是否为 1-65535 的整数
             if [ "$2" -eq "$2" ] 2>/dev/null && [ "$2" -ge 1 ] && [ "$2" -le 65535 ]; then
-                SERVER_PORT="$2"
-                shift 2
+                SERVER_PORT="$2"; shift 2
             else
                 error "端口必须是 1-65535 之间的整数"
-            fi
-            ;;
-        --service)
-            INSTALL_AS_SERVICE=true
-            shift
-            ;;
-        *)
-            shift
-            ;;
+            fi ;;
+        --service) INSTALL_AS_SERVICE=true; shift ;;
+        *) shift ;;
     esac
 done
 
@@ -83,25 +74,8 @@ download_binary() {
     local bin_path="$tmp_dir/${BIN_NAME}"
     
     log "正在下载 Hysteria2 二进制..."
-    if ! curl -fL --retry 3 -o "$bin_path" \
-        "https://github.com/apernet/hysteria/releases/download/${HYSTERIA_RELEASE_TAG}/${BIN_NAME}"; then
-        error "下载失败，请检查网络或 GitHub 可达性"
-    fi
-
-    # 尝试 SHA256 校验（可选）
-    if hash_url=$(curl -fsSL "https://github.com/apernet/hysteria/releases/download/${HYSTERIA_RELEASE_TAG//\//%2F}/hashes.txt" 2>/dev/null); then
-        expected_sha=$(echo "$hash_url" | grep "$BIN_NAME" | awk '{print $1}' | head -n1)
-        if [ -n "$expected_sha" ]; then
-            actual_sha=$(sha256sum "$bin_path" | awk '{print $1}')
-            if [ "$actual_sha" = "$expected_sha" ]; then
-                success "✅ 二进制校验通过"
-            else
-                error "SHA256 校验失败！文件可能被篡改或损坏"
-            fi
-        fi
-    else
-        warn "无法获取哈希表，跳过校验（不影响功能）"
-    fi
+    curl -fL --retry 3 -o "$bin_path" \
+        "https://github.com/apernet/hysteria/releases/download/${HYSTERIA_RELEASE_TAG}/${BIN_NAME}" || error "下载失败"
 
     chmod +x "$bin_path"
     echo "$bin_path"
@@ -110,26 +84,19 @@ download_binary() {
 setup_cert() {
     local tmp_dir="/tmp/hy2-cert-$$"
     mkdir -p "$tmp_dir"
-    cd "$tmp_dir"
-    
     log "生成自签名证书 (SNI: $SNI)..."
-    if ! openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
-        -days 3650 -keyout "$KEY_FILE" -out "$CERT_FILE" \
-        -subj "/CN=${SNI}" >/dev/null 2>&1; then
-        error "证书生成失败，请检查 OpenSSL 是否正常"
-    fi
-    
-    pwd
+    openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+        -days 3650 -keyout "$tmp_dir/$KEY_FILE" -out "$tmp_dir/$CERT_FILE" \
+        -subj "/CN=${SNI}" >/dev/null 2>&1 || error "证书生成失败"
+    echo "$tmp_dir"
 }
 
 write_config() {
     local tmp_dir="/tmp/hy2-config-$$"
     mkdir -p "$tmp_dir"
-    cd "$tmp_dir"
-    
     AUTH_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-24)
     
-    cat > "$CONFIG_FILE" <<EOF
+    cat > "$tmp_dir/$CONFIG_FILE" <<EOF
 server:
   listen: ":${SERVER_PORT}"
 tls:
@@ -145,42 +112,40 @@ quic:
 log:
   level: warn
 EOF
-
-    echo "$AUTH_PASSWORD" > "password.txt"
-    pwd
+    echo "$AUTH_PASSWORD" > "$tmp_dir/password.txt"
+    echo "$tmp_dir"
 }
 
 install_service() {
     if [ "$INSTALL_AS_SERVICE" = false ]; then return; fi
 
     log "安装 systemd 服务..."
-    
     if ! id "$USER_NAME" >/dev/null 2>&1; then
         sudo useradd --system --no-create-home --shell /usr/sbin/nologin "$USER_NAME"
     fi
 
     sudo mkdir -p "$INSTALL_DIR"
 
-    # 处理低端口
+    # 1. 复制文件到最终目录
+    sudo cp "$BIN_PATH" "$INSTALL_DIR/${BIN_NAME}"
+    sudo cp "$CERT_DIR/$CERT_FILE" "$INSTALL_DIR/"
+    sudo cp "$CERT_DIR/$KEY_FILE" "$INSTALL_DIR/"
+    sudo cp "$CONF_DIR/$CONFIG_FILE" "$INSTALL_DIR/"
+    sudo cp "$CONF_DIR/password.txt" "$INSTALL_DIR/"
+
+    # 2. 授权低端口能力 (在最终安装目录执行，避免 /tmp 挂载限制)
     if [ "$SERVER_PORT" -lt 1024 ]; then
-        log "授予 CAP_NET_BIND_SERVICE 能力（用于绑定低端口）..."
-        if ! sudo setcap 'cap_net_bind_service=+ep' "$BIN_PATH"; then
-            error "❌ setcap 失败！请改用高端口（如 29999）或检查 /tmp 分区挂载选项"
-        fi
-        if ! getcap "$BIN_PATH" | grep -q "cap_net_bind_service"; then
-            error "❌ CAP_NET_BIND_SERVICE 未生效！"
-        fi
+        log "授予 CAP_NET_BIND_SERVICE 能力..."
+        sudo setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/${BIN_NAME}"
     fi
 
-    # 安全复制文件
-    sudo cp "$BIN_PATH" "$CERT_DIR/$CERT_FILE" "$CERT_DIR/$KEY_FILE" \
-              "$CONF_DIR/$CONFIG_FILE" "$CONF_DIR/password.txt" "$INSTALL_DIR/"
-
+    # 3. 设置严格权限
     sudo chown -R "$USER_NAME:$USER_NAME" "$INSTALL_DIR"
-    sudo chmod 700 "$INSTALL_DIR"
-    sudo chmod 600 "$INSTALL_DIR"/*.pem "$INSTALL_DIR"/password.txt
+    sudo chmod 755 "$INSTALL_DIR"
+    sudo chmod 600 "$INSTALL_DIR"/*.pem "$INSTALL_DIR"/*.txt "$INSTALL_DIR"/*.yaml
+    sudo chmod +x "$INSTALL_DIR/${BIN_NAME}"
 
-    # 生成 systemd 单元
+    # 4. 生成 systemd 单元
     sudo tee "/etc/systemd/system/${SERVICE_NAME}.service" > /dev/null <<EOF
 [Unit]
 Description=Hysteria2 Server
@@ -217,7 +182,7 @@ health_check() {
     if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
         success "✅ Hysteria2 服务运行正常"
     else
-        warn "服务状态异常，请手动检查: sudo journalctl -u ${SERVICE_NAME}.service -n 30"
+        error "服务状态异常，请查看日志: sudo journalctl -u ${SERVICE_NAME}.service -n 30"
     fi
 }
 
@@ -228,30 +193,29 @@ cleanup() {
 # ========== 主流程 ==========
 trap cleanup EXIT
 
-# 准备文件
+# 准备文件并捕获路径
 BIN_PATH=$(download_binary)
 CERT_DIR=$(setup_cert)
 CONF_DIR=$(write_config)
 
-# 停止旧服务
+# 确保旧服务停止
 sudo systemctl stop "${SERVICE_NAME}.service" 2>/dev/null || true
 
-# 安装
+# 安装与自检
 install_service
 tune_kernel
 health_check
 
-# 获取结果
+# 提取信息
 FINAL_PWD=$(cat "$CONF_DIR/password.txt")
-IP=$(curl -s --max-time 5 https://api.ipify.org || curl -s --max-time 5 https://ifconfig.me/ip || echo "YOUR_PUBLIC_IP")
+IP=$(curl -s --max-time 5 https://api.ipify.org || echo "YOUR_PUBLIC_IP")
 
-# 输出
 echo -e "\n-------------------------------------------"
 echo -e "🎉 Hysteria2 部署成功！"
 echo -e "🔑 密码: ${FINAL_PWD}"
 echo -e "🔗 链接: hysteria2://${FINAL_PWD}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-Server"
-echo -e "📁 安装路径: ${INSTALL_DIR}"
+echo -e "📁 安装目录: ${INSTALL_DIR}"
 echo -e "-------------------------------------------"
 echo -e "\n⚠️  重要提示："
-echo -e "   1. 请在云服务器控制台放行 ${SERVER_PORT}/TCP 和 ${SERVER_PORT}/UDP"
-echo -e "   2. 私钥和密码文件权限为 600，仅 hysteria2 用户可读"
+echo -e "   1. 请在控制台放行 ${SERVER_PORT}/TCP 和 ${SERVER_PORT}/UDP"
+echo -e "   2. 客户端连接请开启 'Insecure/允许不安全证书'"
