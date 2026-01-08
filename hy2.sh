@@ -243,7 +243,11 @@ write_config
 install_service
 tune_kernel
 setup_firewall
-health_check   # ← 新增这一行
+
+# 仅在服务模式下做健康检查（因为只有这时服务才在运行）
+if [[ "$INSTALL_AS_SERVICE" == true ]]; then
+    health_check
+fi
 
 IP=$(get_ip)
 # 从安装目录读取密码以防变量丢失
