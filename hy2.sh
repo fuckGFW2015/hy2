@@ -186,8 +186,55 @@ setup_firewall() {
 }
 
 get_ip() {
-    curl -s --max-time 5 https://api.ipify.org || echo "YOUR_IP"
+    # 尝试两个可靠的外部服务获取公网 IP
+    for service in "https://api.ipify.org" "https://ifconfig.me/ip"; do
+        ip=$(curl -s --max-time 5 "$service" 2>/dev/null)
+        if [[ "$ip" =～ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "$ip"
+            return
+        fi
+    done
+
+    # 最后回退到本地路由源 IP（在 RACKNERD 等直连公网 VPS 上即为公网 IP）
+    local fallback_ip
+    fallback_ip=$(ip route get 8.8.8.8 2>/dev/null | awk '{print $7; exit}' | head -n1)
+    echo "${fallback_ip:-YOUR_PUBLIC_IP}"
 }
+
+health_check() {
+    log "🔍 正在执行运行状态自检..."
+
+    if [[ "$INSTALL_AS_SERVICE" == true ]]; then
+        if ! sudo systemctl is-active --quiet "$SERVICE_NAME"; then
+            error "systemd 服务 $SERVICE_NAME 未运行！请运行 'sudo journalctl -u $SERVICE_NAME' 查看日志"
+        fi
+    else
+        log "⚠️  非服务模式：仅检查端口监听状态"
+    fi
+
+    local tcp_listening=0 udp_listening=0
+
+    if command -v ss >/dev/null; then
+        tcp_listening=$(ss -tuln 2>/dev/null | grep -c ":${SERVER_PORT}.*LISTEN")
+        udp_listening=$(ss -uln 2>/dev/null | grep -c ":${SERVER_PORT}.*UNCONN")
+    elif command -v netstat >/dev/null; then
+        tcp_listening=$(netstat -tuln 2>/dev/null | grep -c ":${SERVER_PORT}.*LISTEN")
+        udp_listening=$(netstat -uln 2>/dev/null | grep -c ":${SERVER_PORT} ")
+    else
+        log "⚠️  无法检查端口（缺少 ss/netstat），跳过自检"
+        return 0
+    fi
+
+    if (( tcp_listening > 0 && udp_listening > 0 )); then
+        success "✅ Hysteria2 正在监听 TCP/UDP 端口 ${SERVER_PORT}"
+        if [[ "$INSTALL_AS_SERVICE" == true ]]; then
+            log "💡 提示：请确保您的防火墙（如安全组、ufw、firewalld 或 iptables）已放行 ${SERVER_PORT}/TCP 和 ${SERVER_PORT}/UDP"
+        fi
+    else
+        error "❌ 端口 ${SERVER_PORT} 未正确监听（TCP: $tcp_listening, UDP: $udp_listening）。请检查配置或防火墙。"
+    fi
+}
+
 
 # ========== 主流程 ==========
 download_binary
@@ -196,6 +243,7 @@ write_config
 install_service
 tune_kernel
 setup_firewall
+health_check   # ← 新增这一行
 
 IP=$(get_ip)
 # 从安装目录读取密码以防变量丢失
