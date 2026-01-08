@@ -249,15 +249,15 @@ get_ip() {
 }
 
 health_check() {
-+   local unit="${SERVICE_NAME}.service"
+    local unit="${SERVICE_NAME}.service"
     log "🔍 正在执行运行状态自检..."
     sleep 5
--   if systemctl is-active --quiet "$SERVICE_NAME"; then
-+   if systemctl is-active --quiet "$unit"; then
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+    if systemctl is-active --quiet "$unit"; then
         success "✅ Hysteria2 服务运行正常"
     else
--       log "⚠️ 服务状态待定，请手动执行: sudo systemctl status $SERVICE_NAME"
-+       log "⚠️ 服务状态待定，请手动执行: sudo systemctl status $unit"
+      log "⚠️ 服务状态待定，请手动执行: sudo systemctl status $SERVICE_NAME"
+      log "⚠️ 服务状态待定，请手动执行: sudo systemctl status $unit"
     fi
 }
 
