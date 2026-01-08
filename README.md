@@ -91,40 +91,11 @@ lsmod | grep bbr
 
 ```
 
-## 7.卸载脚本
+## 7.一键卸载脚本
+# 在 FinalShell 的终端中，以 root 身份运行以下命令
 
 ```
-#!/bin/bash
-
-# 停止并移除服务
-sudo systemctl stop hysteria2.service
-sudo systemctl disable hysteria2.service
-sudo rm -f /etc/systemd/system/hysteria2.service
-sudo systemctl daemon-reload
-
-# 删除安装目录
-sudo rm -rf /etc/hysteria2
-
-# 删除用户（可选）
-sudo userdel hysteria2 2>/dev/null || true
-
-# 清理内核优化
-sudo rm -f /etc/sysctl.d/99-hysteria.conf
-sudo sysctl --system >/dev/null 2>&1
-
-# 关闭防火墙端口（默认 29999，如使用其他端口请先修改！）
-PORT=29999
-
-if command -v ufw &>/dev/null; then
-    sudo ufw delete allow "$PORT/tcp" 2>/dev/null || true
-    sudo ufw delete allow "$PORT/udp" 2>/dev/null || true
-elif command -v firewall-cmd &>/dev/null; then
-    sudo firewall-cmd --permanent --remove-port="$PORT/tcp" 2>/dev/null || true
-    sudo firewall-cmd --permanent --remove-port="$PORT/udp" 2>/dev/null || true
-    sudo firewall-cmd --reload
-fi
-
-echo "✅ Hysteria2 已完全卸载！"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/heads/main/uninstall_hysteria2.sh)"
 
 ```
 
