@@ -48,14 +48,13 @@ sudo dnf install -y curl openssl coreutils gawk
 
 ```
 
-## 4.一键部署脚本
+## 4.一键部署脚本（默认端口443，已最完美，不建议自定义）
 
 ```
 
 curl -fsSL -o hy2.sh https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/heads/main/hy2.sh && chmod +x hy2.sh && ./hy2.sh --service
 
 ```
-## 默认端口443（已最完美，不建议自定义）
 
 ## 5.一键开启 BBR加速（要求 Linux 内核 ≥ 4.9）
 BBR 要求：
