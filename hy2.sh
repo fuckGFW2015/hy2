@@ -146,7 +146,15 @@ EOF
 
 install_service() {
     if [[ "$INSTALL_AS_SERVICE" == false ]]; then return; fi
+
+     # ========== 新增：确保存在所有必要文件 ==========
+    for file in "${BIN_NAME}" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt"; do
+        if [[ ! -f "$file" ]]; then
+            error "服务模式所需文件缺失: $file"
+        fi
+    done
     
+  # ============================================  
     log "准备安装目录: $INSTALL_DIR"
     sudo mkdir -p "$INSTALL_DIR"
     
