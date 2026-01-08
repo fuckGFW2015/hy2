@@ -99,17 +99,9 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/hea
 
 ```
 
-## 8. 验证卸载结果
+## 8. 卸载成功会显示
 ```
-执行完后，可以手动检查
-# 检查服务是否存在
-systemctl list-unit-files | grep hysteria2
-
-# 检查文件是否删除
-ls /etc/hysteria2  # 应该提示“没有那个文件或目录”
-
-# 检查端口是否关闭
-ss -uln | grep ':29999'  # 应该无输出
+✅ Hysteria2 已成功从你的系统中卸载！
 ```
 
 
