@@ -69,12 +69,14 @@ tune_kernel() {
     local conf_file="/etc/sysctl.d/99-hysteria.conf"
     cat <<EOF | sudo tee "$conf_file" > /dev/null
 # Hysteria2 优化配置
-net.core.rmem_max = 8388608
-net.core.wmem_max = 8388608
-net.core.rmem_default = 1048576
-net.core.wmem_default = 1048576
-# 增加接收队列长度，防止 UDP 丢包
-net.core.netdev_max_backlog = 2048
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.core.rmem_default = 2097152
+net.core.wmem_default = 2097152
+net.core.netdev_max_backlog = 10000
+# 针对高并发 UDP 的优化
+net.ipv4.udp_rmem_min = 16384
+net.ipv4.udp_wmem_min = 16384
 EOF
     sudo sysctl --system >/dev/null 2>&1 || log "⚠️ sysctl 应用受限，跳过"
 }
@@ -217,39 +219,55 @@ get_ip() {
 }
 
 health_check() {
-    log "🔍 正在执行运行状态自检..."
+    log "🔍 正在执行运行状态自检 (等待服务就绪)..."
+
+    # 1. 给服务一点启动时间
+    sleep 2
 
     if [[ "$INSTALL_AS_SERVICE" == true ]]; then
-        if ! sudo systemctl is-active --quiet "$SERVICE_NAME"; then
-            error "systemd 服务 $SERVICE_NAME 未运行！请运行 'sudo journalctl -u $SERVICE_NAME' 查看日志"
+        # 使用 timeout 防止 systemctl 卡死（关键！）
+        if ! timeout 5s sudo systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+            log "⚠️ 服务未就绪或状态检查超时，尝试重启..."
+            sudo systemctl restart "$SERVICE_NAME"
+            sleep 3  # 给重启后更多时间
         fi
-    else
-        log "⚠️  非服务模式：仅检查端口监听状态"
     fi
 
-    local tcp_listening=0 udp_listening=0
+    # 2. 重试检测端口监听（最多 5 次）
+    local max_retries=5
+    local count=0
+    local tcp_listening=0
+    local udp_listening=0
 
-    if command -v ss >/dev/null; then
-        tcp_listening=$(ss -tuln 2>/dev/null | grep -c ":${SERVER_PORT}.*LISTEN")
-        udp_listening=$(ss -uln 2>/dev/null | grep -c ":${SERVER_PORT}.*UNCONN")
-    elif command -v netstat >/dev/null; then
-        tcp_listening=$(netstat -tuln 2>/dev/null | grep -c ":${SERVER_PORT}.*LISTEN")
-        udp_listening=$(netstat -uln 2>/dev/null | grep -c ":${SERVER_PORT} ")
-    else
-        log "⚠️  无法检查端口（缺少 ss/netstat），跳过自检"
-        return 0
-    fi
+    while (( count < max_retries )); do
+        tcp_listening=0
+        udp_listening=0
 
-    if (( tcp_listening > 0 && udp_listening > 0 )); then
-        success "✅ Hysteria2 正在监听 TCP/UDP 端口 ${SERVER_PORT}"
-        if [[ "$INSTALL_AS_SERVICE" == true ]]; then
-            log "💡 提示：请确保您的防火墙（如安全组、ufw、firewalld 或 iptables）已放行 ${SERVER_PORT}/TCP 和 ${SERVER_PORT}/UDP"
+        if command -v ss >/dev/null; then
+            tcp_listening=$(ss -tuln 2>/dev/null | grep -c ":${SERVER_PORT}.*LISTEN") || true
+            udp_listening=$(ss -uln 2>/dev/null | grep -c ":${SERVER_PORT}.*UNCONN") || true
+        elif command -v netstat >/dev/null; then
+            tcp_listening=$(netstat -tuln 2>/dev/null | grep -c ":${SERVER_PORT}.*LISTEN") || true
+            udp_listening=$(netstat -uln 2>/dev/null | grep -c ":${SERVER_PORT} ") || true
+        else
+            log "⚠️ 无法检测端口（缺少 ss/netstat），跳过自检"
+            return 0
         fi
-    else
-        error "❌ 端口 ${SERVER_PORT} 未正确监听（TCP: $tcp_listening, UDP: $udp_listening）。请检查配置或防火墙。"
-    fi
+
+        if (( tcp_listening > 0 && udp_listening > 0 )); then
+            success "✅ Hysteria2 正在监听 TCP/UDP 端口 ${SERVER_PORT}"
+            return 0
+        fi
+
+        ((count++))
+        if (( count < max_retries )); then
+            log "⏳ 端口尚未就绪，等待中 ($count/$max_retries)..."
+            sleep 2
+        fi
+    done
+
+    error "❌ 端口 ${SERVER_PORT} 自检失败（TCP: $tcp_listening, UDP: $udp_listening）。请运行 'sudo journalctl -u $SERVICE_NAME' 查看具体错误。"
 }
-
 
 # ========== 主流程 ==========
 download_binary
