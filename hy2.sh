@@ -217,8 +217,21 @@ install_service
 tune_kernel
 health_check
 
+# 获取结果
 FINAL_PWD=$(cat "$CONF_DIR/password.txt")
-IP=$(curl -s --max-time 5 https://api.ipify.org || echo "YOUR_IP")
+
+log "正在获取公网 IP..."
+# 尝试多个 API 确保 100% 获取成功
+IP=$(curl -s --max-time 3 https://api.ipify.org || \
+     curl -s --max-time 3 https://ifconfig.me/ip || \
+     curl -s --max-time 3 https://checkip.amazonaws.com || \
+     curl -s --max-time 3 https://ip.sb || \
+     echo "YOUR_PUBLIC_IP")
+
+# 如果最后还是拿不到（极其少见），提醒手动替换
+if [ "$IP" = "YOUR_PUBLIC_IP" ]; then
+    warn "未能自动获取到公网 IP，请在客户端手动将 YOUR_PUBLIC_IP 替换为服务器实际 IP"
+fi
 
 echo -e "\n-------------------------------------------"
 echo -e "🎉 Hysteria2 部署成功！"
