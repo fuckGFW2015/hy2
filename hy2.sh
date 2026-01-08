@@ -259,6 +259,18 @@ health_check() {
     fi
 }
 
+# ========== 防御性校验 ==========
+if [[ "$SERVICE_NAME" == *.service ]]; then
+    error "SERVICE_NAME 不能包含 '.service' 后缀！请设为 'hysteria2'"
+fi
+
+# ========== 主流程 ==========
+download_binary
+setup_cert
+write_config
+install_service
+tune_kernel
+setup_firewall
 # ========== 主流程 ==========
 download_binary
 setup_cert
