@@ -189,7 +189,7 @@ get_ip() {
     # 尝试两个可靠的外部服务获取公网 IP
     for service in "https://api.ipify.org" "https://ifconfig.me/ip"; do
         ip=$(curl -s --max-time 5 "$service" 2>/dev/null)
-        if [[ "$ip" =～ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "$ip"
             return
         fi
