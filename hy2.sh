@@ -180,15 +180,40 @@ fix_firewall_conflicts() {
 }
 
 tune_kernel() {
-    log "优化网络内核参数..."
+    log "🚀 正在优化网络内核参数 (BBR + UDP 增强)..."
     local conf_file="/etc/sysctl.d/99-hysteria.conf"
+    
+    # 写入增强型优化参数
     cat <<EOF | sudo tee "$conf_file" > /dev/null
+# 1. 提高 UDP 缓冲区限额 (解决大流量丢包)
 net.core.rmem_max = 16777216
 net.core.wmem_max = 16777216
 net.ipv4.udp_rmem_min = 16384
 net.ipv4.udp_wmem_min = 16384
+
+# 2. 启用 BBR 拥塞控制 (加速传输)
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+
+# 3. 提高系统最大连接追踪数 (防止连接过多导致断连)
+net.nf_conntrack_max = 1048576
+net.netfilter.nf_conntrack_max = 1048576
+
+# 4. 提高文件描述符上限 (防止服务崩溃)
+fs.file-max = 1000000
 EOF
+
+    # 立即应用参数
     sudo sysctl --system >/dev/null 2>&1 || true
+    
+    # 验证 BBR 状态并输出结果
+    local cc
+    cc=$(sysctl net.ipv4.tcp_congestion_control | awk '{print $3}')
+    if [ "$cc" = "bbr" ]; then
+        success "内核优化成功：BBR + FQ + UDP 缓冲区已就绪"
+    else
+        warn "内核参数已写入，但当前拥塞控制算法为: $cc"
+    fi
 }
 
 health_check() {
