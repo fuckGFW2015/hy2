@@ -168,9 +168,19 @@ install_service() {
     sudo mv "${BIN_NAME}" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt" "$INSTALL_DIR/"
     sudo chown -R "$USER_NAME:$USER_NAME" "$INSTALL_DIR"
     sudo chmod 700 "$INSTALL_DIR"
+    
+ # >>> 新增：设置 capabilities（仅当端口 <1024）
+    if (( SERVER_PORT < 1024 )); then
+        log "端口 $SERVER_PORT < 1024，正在授予 CAP_NET_BIND_SERVICE 能力..."
+        if ! sudo setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/${BIN_NAME}"; then
+            error "❌ 无法设置 CAP_NET_BIND_SERVICE 能力。请确保文件系统支持 extended attributes。"
+        fi
+        log "已授予能力: $(getcap "$INSTALL_DIR/${BIN_NAME}" 2>/dev/null)"
+    fi
 
+        # >>> 新增：生成带 AmbientCapabilities 的 systemd 服务
     log "配置 systemd 服务..."
-    cat <<EOF | sudo tee "/etc/systemd/system/${SERVICE_NAME}" > /dev/null
+    sudo tee "/etc/systemd/system/${SERVICE_NAME}.service" > /dev/null <<EOF
 [Unit]
 Description=Hysteria2 Server
 After=network.target
@@ -179,14 +189,27 @@ After=network.target
 Type=simple
 User=${USER_NAME}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/${BIN_NAME} server -c ${INSTALL_DIR}/${CONFIG_FILE}
+ExecStart=${INSTALL_DIR}/${BIN_NAME} server -c ${INSTALL_DIR}/server.yaml
 Restart=on-failure
+RestartSec=3s
+
+$(if (( SERVER_PORT < 1024 )); then
+    echo "# 允许绑定低端口"
+    echo "AmbientCapabilities=CAP_NET_BIND_SERVICE"
+fi)
+
 NoNewPrivileges=true
-ProtectSystem=full
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+MemoryDenyWriteExecute=true
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
     sudo systemctl daemon-reload
     sudo systemctl enable --now "${SERVICE_NAME}"
 }
