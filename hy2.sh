@@ -1,3 +1,4 @@
+cat > hy2.sh << 'EOF'
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
 # Hysteria2 安全增强版部署脚本 v2.1
@@ -21,7 +22,6 @@ KEY_FILE=key.pem
 CONFIG_FILE=server.yaml
 SERVICE_NAME="hysteria2"
 USER_NAME="hysteria2"
-# 固定的安装目录，解决 root 权限死锁
 INSTALL_DIR="/etc/hysteria2"
 
 # 检测并映射 CPU 架构
@@ -52,7 +52,7 @@ show_help() {
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -p|--port)
-            if [[ "$2" =~ ^[0-9]+$ ]] && (( $2 >= 1 && $2 <= 65535 )); then
+            if [[ "$2" =～ ^[0-9]+$ ]] && (( $2 >= 1 && $2 <= 65535 )); then
                 SERVER_PORT="$2"; shift 2
             else
                 error "端口无效"; fi ;;
@@ -147,17 +147,14 @@ EOF
 }
 
 install_service() {
-    # 1. 检查是否需要安装服务
     if [[ "$INSTALL_AS_SERVICE" == false ]]; then return; fi
 
-    # 2. 确保所有必要文件都已生成
     for file in "${BIN_NAME}" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt"; do
         if [[ ! -f "$file" ]]; then
             error "服务模式所需文件缺失: $file"
         fi
     done
     
-    # 3. 准备环境
     log "准备安装目录: $INSTALL_DIR"
     sudo mkdir -p "$INSTALL_DIR"
     
@@ -165,27 +162,23 @@ install_service() {
         sudo useradd --system --no-create-home --shell /usr/sbin/nologin "$USER_NAME"
     fi
 
-    # 4. 使用 cp 避免跨分区问题（更安全）
     log "正在将文件迁移至系统目录..."
     sudo cp "${BIN_NAME}" "$CERT_FILE" "$KEY_FILE" "$CONFIG_FILE" "password.txt" "$INSTALL_DIR/"
     sudo chown -R "$USER_NAME:$USER_NAME" "$INSTALL_DIR"
     sudo chmod 700 "$INSTALL_DIR"
 
-    # 5. 为低端口授予能力（并验证）
     if (( SERVER_PORT < 1024 )); then
         log "检测到特权端口 $SERVER_PORT，正在授予 CAP_NET_BIND_SERVICE 能力..."
         if ! sudo setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/${BIN_NAME}"; then
             error "❌ setcap 失败！请检查 /etc 所在分区是否支持 extended attributes（非 noexec 挂载）"
         fi
         
-        # 验证能力是否生效
         if ! getcap "$INSTALL_DIR/${BIN_NAME}" | grep -q "cap_net_bind_service"; then
             error "❌ CAP_NET_BIND_SERVICE 未生效！部署中止。建议改用高位端口（如 29999）。"
         fi
         log "✅ 能力已成功授予"
     fi
 
-    # 6. 生成 systemd 服务文件（带 .service 后缀！）
     local SERVICE_FILE="${SERVICE_NAME}.service"
     log "配置 systemd 服务: $SERVICE_FILE"
     sudo tee "/etc/systemd/system/$SERVICE_FILE" > /dev/null <<EOF
@@ -213,7 +206,6 @@ RestrictAddressFamilies=AF_INET AF_INET6
 WantedBy=multi-user.target
 EOF
 
-    # 7. 启动服务
     sudo systemctl daemon-reload
     if sudo systemctl enable --now "$SERVICE_FILE"; then
         success "✅ Systemd 服务 '$SERVICE_FILE' 已启动"
@@ -221,6 +213,7 @@ EOF
         error "❌ 服务启动失败，请运行：sudo journalctl -u $SERVICE_FILE -n 30 --no-pager"
     fi
 }
+
 setup_firewall() {
     log "配置防火墙端口: $SERVER_PORT"
     if command -v ufw &>/dev/null; then
@@ -233,16 +226,14 @@ setup_firewall() {
 }
 
 get_ip() {
-    # 尝试两个可靠的外部服务获取公网 IP
     for service in "https://api.ipify.org" "https://ifconfig.me/ip"; do
         ip=$(curl -s --max-time 5 "$service" 2>/dev/null)
-        if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        if [[ "$ip" =～ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "$ip"
             return
         fi
     done
 
-    # 最后回退到本地路由源 IP（在 RACKNERD 等直连公网 VPS 上即为公网 IP）
     local fallback_ip
     fallback_ip=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") {print $(i+1); exit}}')
     echo "${fallback_ip:-YOUR_PUBLIC_IP}"
@@ -252,12 +243,10 @@ health_check() {
     local unit="${SERVICE_NAME}.service"
     log "🔍 正在执行运行状态自检..."
     sleep 5
-    if systemctl is-active --quiet "$SERVICE_NAME"; then
     if systemctl is-active --quiet "$unit"; then
         success "✅ Hysteria2 服务运行正常"
     else
-      log "⚠️ 服务状态待定，请手动执行: sudo systemctl status $SERVICE_NAME"
-      log "⚠️ 服务状态待定，请手动执行: sudo systemctl status $unit"
+        log "⚠️ 服务状态待定，请手动执行: sudo systemctl status $unit"
     fi
 }
 
@@ -274,13 +263,11 @@ install_service
 tune_kernel
 setup_firewall
 
-# 仅在服务模式下做健康检查（因为只有这时服务才在运行）
 if [[ "$INSTALL_AS_SERVICE" == true ]]; then
     health_check
 fi
 
 IP=$(get_ip)
-# 从安装目录读取密码以防变量丢失
 FINAL_PWD=$(sudo cat "${INSTALL_DIR}/password.txt" 2>/dev/null || echo "$AUTH_PASSWORD")
 
 echo -e "\n🎉 部署成功！"
