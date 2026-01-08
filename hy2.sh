@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
 # Hysteria2 安全增强版部署脚本 v2.3
+# 作者：stephchow
 # 更新: 2026-01-08 | 修复自检误报 & 权限逻辑
 
 set -euo pipefail
@@ -178,3 +179,5 @@ echo -e "🎉 Hysteria2 部署成功！"
 echo -e "🔑 密码: ${PWD}"
 echo -e "🔗 链接: hysteria2://${PWD}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-Server"
 echo -e "-------------------------------------------"
+echo -e "\n⚠️  注意：若您使用云服务器，请务必在云商控制台安全组/防火墙中"
+echo -e "    同时放行 ${SERVER_PORT}/TCP 和 ${SERVER_PORT}/UDP 协议！"
