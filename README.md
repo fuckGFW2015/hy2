@@ -56,7 +56,7 @@ curl -fsSL -o hy2.sh https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/head
 
 ```
 
-## 5.一键开启 BBR加速（要求 Linux 内核 ≥ 4.9）
+## 5.一键脚本已自动开启 BBR加速+UDP 增强，不需要手动操作！
 BBR 要求：
 Linux 内核 ≥ 4.9
 （搬瓦工大多数系统如 Ubuntu 20.04+/Debian 10+ 默认满足）
@@ -64,15 +64,6 @@ Linux 内核 ≥ 4.9
 uname -r
 ✅ 如果输出类似 5.4.0, 5.15.0, 6.1.0 等 → 支持 BBR。
 
-```
-# 清理旧配置并启用 BBR
-sudo sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
-sudo sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
-echo 'net.core.default_qdisc=fq' | sudo tee -a /etc/sysctl.conf
-echo 'net.ipv4.tcp_congestion_control=bbr' | sudo tee -a /etc/sysctl.conf
-sudo sysctl -p
-
-```
 ## 6.验证BBR是否启用
 
 ```
