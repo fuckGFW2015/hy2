@@ -7,11 +7,12 @@ CONF_FILE="${CONF_DIR}/config.json"
 CERT_DIR="${CONF_DIR}/certs"
 DB_FILE="${CONF_DIR}/.script_data.db"
 
-# 颜色定义
+# 颜色定义（✅ 已补全 CYAN）
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'   # ←←← 关键：补上这行！
 NC='\033[0m'
 
 # --- 核心辅助函数 ---
@@ -54,17 +55,32 @@ open_ports() {
 install_core() {
     info "从 GitHub 获取最新官方 Beta 核心..."
     local api_url="https://api.github.com/repos/SagerNet/sing-box/releases"
-    TAG=$(curl -s $api_url | jq -r 'map(select(.prerelease == true)) | .[0].tag_name')
-    [[ -z "$TAG" || "$TAG" == "null" ]] && error "获取版本失败"
+    response=$(curl -s "$api_url")
+    if [[ $? -ne 0 ]] || [[ -z "$response" ]]; then
+        error "无法连接 GitHub API"
+    fi
+    TAG=$(echo "$response" | jq -r 'map(select(.prerelease == true)) | first | .tag_name // empty')
+    [[ -z "$TAG" ]] && error "获取版本失败（可能无 prerelease 或 API 限流）"
 
     VERSION=${TAG#v}
     ARCH=$(uname -m)
-    if [[ "$ARCH" == "x86_64" ]]; then SARCH="linux-amd64"; else SARCH="linux-arm64"; fi
+    case "$ARCH" in
+        x86_64)   SARCH="linux-amd64" ;;
+        aarch64)  SARCH="linux-arm64" ;;
+        armv7l)   SARCH="linux-arm-v7" ;;
+        *)        error "不支持的 CPU 架构: $ARCH" ;;
+    esac
     
     URL="https://github.com/SagerNet/sing-box/releases/download/${TAG}/sing-box-${VERSION}-${SARCH}.tar.gz"
-    wget -qO- "$URL" | tar -xz -C /tmp
-    mv /tmp/sing-box-*/sing-box $SINGBOX_BIN
-    chmod +x $SINGBOX_BIN
+    tmp_dir="/tmp/singbox-install-$$"
+    mkdir -p "$tmp_dir"
+    if ! wget -qO- "$URL" | tar -xz -C "$tmp_dir"; then
+        rm -rf "$tmp_dir"
+        error "下载或解压失败"
+    fi
+    mv "$tmp_dir"/sing-box-*/sing-box "$SINGBOX_BIN"
+    chmod +x "$SINGBOX_BIN"
+    rm -rf "$tmp_dir"
     mkdir -p "$CONF_DIR" "$CERT_DIR"
     success "Sing-box $TAG 安装成功"
 }
@@ -81,11 +97,12 @@ generate_config() {
     [[ "$mode" == "hy2" ]] && open_ports "$hy2_port"
     [[ "$mode" == "reality" ]] && open_ports "$rel_port"
 
+    [[ ! -x "$SINGBOX_BIN" ]] && error "Sing-box 未安装或不可执行"
     local uuid=$($SINGBOX_BIN generate uuid)
     local keypair=$($SINGBOX_BIN generate reality-keypair)
     local pk=$(echo "$keypair" | awk '/PrivateKey/ {print $2}')
     local pub=$(echo "$keypair" | awk '/PublicKey/ {print $2}')
-    local sid=$(openssl rand -hex 8)
+    local sid=$(openssl rand -hex 4)  # 4字节更标准
     local pass=$(openssl rand -base64 12)
     local ip=$(curl -s https://api.ipify.org)
 
@@ -94,7 +111,7 @@ generate_config() {
     
     if [[ "$mode" == "all" || "$mode" == "hy2" ]]; then
         openssl ecparam -genkey -name prime256v1 -out "$CERT_DIR/private.key"
-        openssl req -new -x509 -days 3650 -key "$CERT_DIR/private.key" -out "$CERT_DIR/cert.pem" -subj "/CN=bing.com"
+        openssl req -new -x509 -days 3650 -nodes -key "$CERT_DIR/private.key" -out "$CERT_DIR/cert.pem" -subj "/CN=bing.com"
         hy2_in=$(jq -n --arg port "$hy2_port" --arg pass "$pass" --arg cert "$CERT_DIR/cert.pem" --arg key "$CERT_DIR/private.key" \
             '{"type":"hysteria2","tag":"hy2-in","listen":"::","listen_port":($port|tonumber),"users":[{"password":$pass}],"tls":{"enabled":true,"certificate_path":$cert,"key_path":$key}}')
     fi
@@ -121,8 +138,6 @@ After=network.target
 ExecStart=$SINGBOX_BIN run -c $CONF_FILE
 Restart=on-failure
 User=root
-LimitNPROC=500
-LimitNOFILE=1000000
 
 [Install]
 WantedBy=multi-user.target
@@ -131,10 +146,20 @@ EOF
     systemctl enable --now sing-box
     success "服务已启动"
 }
+
 # --- 功能函数 ---
 show_info() {
     [[ ! -f "$DB_FILE" ]] && { warn "未找到记录"; return; }
-    source "$DB_FILE"
+    # 安全读取配置（避免 source 风险）
+    MODE=$(grep '^MODE=' "$DB_FILE" | cut -d'=' -f2 | tr -d '"')
+    IP=$(grep '^IP=' "$DB_FILE" | cut -d'=' -f2 | tr -d '"')
+    HY2_P=$(grep '^HY2_P=' "$DB_FILE" | cut -d'=' -f2 | tr -d '"')
+    HY2_K=$(grep '^HY2_K=' "$DB_FILE" | cut -d'=' -f2 | tr -d '"')
+    REL_P=$(grep '^REL_P=' "$DB_FILE" | cut -d'=' -f2 | tr -d '"')
+    REL_U=$(grep '^REL_U=' "$DB_FILE" | cut -d'=' -f2 | tr -d '"')
+    REL_B=$(grep '^REL_B=' "$DB_FILE" | cut -d'=' -f2 | tr -d '"')
+    REL_S=$(grep '^REL_S=' "$DB_FILE" | cut -d'=' -f2 | tr -d '"')
+
     echo -e "\n${GREEN}======= 配置详情 =======${NC}"
     if [[ "$MODE" == "all" || "$MODE" == "hy2" ]]; then
         local link="hy2://$HY2_K@$IP:$HY2_P?insecure=1&sni=bing.com#Hy2-$IP"
