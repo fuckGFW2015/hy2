@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
-# Hysteria2 安全增强部署脚本 v3.1 (Final/Firewall-Fix)
+# Hysteria2 安全增强部署脚本 v3.6 (Final/Firewall-Fix)
 # 作者:stephchow
-# 更新: 2026-01-09 | 功能: SHA256校验 | 特权端口授权 | 自动修复防火墙冲突 | QUIC优化
+# 更新: 2026-01-09 | 功能: SHA256校验 | 特权端口授权 | 自动修复防火墙冲突 | QUIC优化 | BBR + FQ + UDP 缓冲区
 
 set -euo pipefail
 
