@@ -121,6 +121,8 @@ After=network.target
 ExecStart=$SINGBOX_BIN run -c $CONF_FILE
 Restart=on-failure
 User=root
+LimitNPROC=500
+LimitNOFILE=1000000
 
 [Install]
 WantedBy=multi-user.target
@@ -129,7 +131,6 @@ EOF
     systemctl enable --now sing-box
     success "服务已启动"
 }
-
 # --- 功能函数 ---
 show_info() {
     [[ ! -f "$DB_FILE" ]] && { warn "未找到记录"; return; }
