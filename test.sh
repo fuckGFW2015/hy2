@@ -324,7 +324,7 @@ IP=$(get_public_ip)
 echo -e "\n==========================================="
 echo -e "🎉 Hysteria2 部署成功！(Qwen 增强版)"
 echo -e "🔑 密码: ${FINAL_PWD}"
-echo -e "🔗 链接: hysteria2://${FINAL_PWD}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-Qwen"
+echo -e "🔗 链接: hysteria2://${FINAL_PWD}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-VPS"
 echo -e "📁 配置目录: ${INSTALL_DIR}"
 echo -e "==========================================="
 echo -e "\n⚠️  重要提示："
