@@ -81,7 +81,7 @@ lsmod | grep bbr
 # 在 FinalShell 的终端中，以 root 身份运行以下命令
 
 ```
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/heads/main/uninstall_hysteria2.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/heads/main/hy2_uninstall.sh)"
 
 ```
 
