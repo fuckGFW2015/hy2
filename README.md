@@ -52,7 +52,7 @@ sudo dnf install -y curl openssl coreutils gawk
 
 ```
 
-curl -fsSL -o hy2.sh https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/heads/main/hy2.sh && chmod +x hy2.sh && ./hy2.sh --service
+curl -fsSL -o hy2.sh https://raw.githubusercontent.com/fuckGFW2015/hy2/refs/heads/main/hy2_install.sh && chmod +x hy2.sh && ./hy2.sh --service
 
 ```
 
