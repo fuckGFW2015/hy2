@@ -162,12 +162,12 @@ show_info() {
 
     echo -e "\n${GREEN}======= 配置详情 =======${NC}"
     if [[ "$MODE" == "all" || "$MODE" == "hy2" ]]; then
-        local link="hy2://$HY2_K@$IP:$HY2_P?insecure=1&sni=bing.com#Hy2-$IP"
+        local link="hy2://$HY2_K@$IP:$HY2_P?insecure=1&sni=www.microsoft.com#Hy2-VPS"
         echo -e "Hysteria2: $link"
         qrencode -t ANSIUTF8 "$link"
     fi
     if [[ "$MODE" == "all" || "$MODE" == "reality" ]]; then
-        local link="vless://$REL_U@$IP:$REL_P?security=reality&sni=www.google.com&fp=chrome&pbk=$REL_B&sid=$REL_S&flow=xtls-rprx-vision&type=tcp#Rel-$IP"
+        local link="vless://$REL_U@$IP:$REL_P?security=reality&sni=www.microsoft.com&fp=chrome&pbk=$REL_B&sid=$REL_S&flow=xtls-rprx-vision&type=tcp#Rel-Server"
         echo -e "Reality: $link"
         qrencode -t ANSIUTF8 "$link"
     fi
