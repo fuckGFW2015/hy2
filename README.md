@@ -67,11 +67,7 @@ uname -r
 ## 6.验证BBR是否启用
 
 ```
-cc=$(cat /proc/sys/net/ipv4/tcp_congestion_control)
-
-echo "当前拥塞控制算法：$cc"
-
-[[ "$cc" == "bbr" ]] && echo "✅ BBR 已启用" || echo "❌ BBR 未启用"
+cc=$(cat /proc/sys/net/ipv4/tcp_congestion_control); echo "当前算法: $cc"; [[ "$cc" == "bbr" ]] && echo "✅ BBR 已启用" || echo "❌ BBR 未启用"
 
 sysctl net.ipv4.tcp_congestion_control
 # 应输出：net.ipv4.tcp_congestion_control = bbr
